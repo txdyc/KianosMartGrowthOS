@@ -1,0 +1,5 @@
+{
+  "10": {"class_type": "LoadImage", "inputs": {"image": "photo.png"}},
+  "20": {"class_type": "BiRefNetRemoveBackground", "inputs": {"image": ["10", 0]}},
+  "30": {"class_type": "SaveImage", "inputs": {"images": ["20", 0], "filename_prefix": "cutout"}}
+}

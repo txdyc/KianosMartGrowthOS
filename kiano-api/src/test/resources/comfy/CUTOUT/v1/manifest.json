@@ -1,0 +1,17 @@
+{
+  "code": "CUTOUT",
+  "inputs": {
+    "image": {"node": "10", "field": "image", "maxLongSide": 2400}
+  },
+  "params": {},
+  "outputs": {"cutout": {"node": "30"}},
+  "requiredNodeClasses": ["LoadImage", "SaveImage"],
+  "models": [
+    {
+      "name": "BiRefNet",
+      "file": "BiRefNet-general.safetensors",
+      "license": "MIT",
+      "source": "https://github.com/ZhengPeng7/BiRefNet"
+    }
+  ]
+}

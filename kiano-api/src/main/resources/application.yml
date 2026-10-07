@@ -46,6 +46,8 @@ kiano:
   media:
     ffprobe-path: "${KIANO_FFPROBE_PATH:ffprobe}"
   content:
+    workflows:
+      allowed-licenses: [MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, CreativeML-OpenRAIL++-M]
     qc:
       photo:
         min-short-side: 2000
