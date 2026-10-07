@@ -1,0 +1,45 @@
+spring:
+  config:
+    import: optional:file:../.env[.properties]
+  datasource:
+    url: "${KIANO_DB_URL}"
+    username: "${POSTGRES_USER}"
+    password: "${POSTGRES_PASSWORD}"
+  servlet:
+    multipart:
+      max-file-size: 2GB
+      max-request-size: 2GB
+
+server:
+  port: 8081
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+
+kiano:
+  security:
+    jwt-secret: "${KIANO_JWT_SECRET}"
+    crypto-key: "${KIANO_CRYPTO_KEY}"
+    cookie-secure: "${KIANO_COOKIE_SECURE:false}"
+    token-ttl: 12h
+  bootstrap:
+    owner-email: "${KIANO_BOOTSTRAP_OWNER_EMAIL:}"
+    owner-password: "${KIANO_BOOTSTRAP_OWNER_PASSWORD:}"
+  web:
+    origin: "${KIANO_WEB_ORIGIN:http://localhost:3000}"
+  storage:
+    endpoint: "${KIANO_STORAGE_ENDPOINT}"
+    public-endpoint: "${KIANO_STORAGE_PUBLIC_ENDPOINT}"
+    bucket: "${KIANO_STORAGE_BUCKET:kiano}"
+    access-key: "${MINIO_ROOT_USER}"
+    secret-key: "${MINIO_ROOT_PASSWORD}"
+    region: us-east-1
+  queue:
+    enabled: true
+    poll-interval: 2s
+    lease: 15m
+  commerce:
+    sync-cron: "0 0 * * * *"
+  media:
+    ffprobe-path: "${KIANO_FFPROBE_PATH:ffprobe}"

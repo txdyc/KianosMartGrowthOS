@@ -1,0 +1,8 @@
+# Fixed secrets for tests only. Datasource is provided by @ServiceConnection
+# (Testcontainers PostgreSQL) in TestcontainersConfiguration.
+kiano:
+  security:
+    jwt-secret: "dGVzdC1qd3Qtc2VjcmV0LTAxMjM0NTY3ODlhYmNkZWYwMTIzNDU2Nzg5YWJjZGVm"
+    crypto-key: "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI="
+  queue:
+    enabled: false

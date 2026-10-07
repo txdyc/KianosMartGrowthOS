@@ -1,0 +1,6 @@
+.env
+kiano-api/target/
+kiano-web/node_modules/
+kiano-web/.next/
+*.log
+.DS_Store

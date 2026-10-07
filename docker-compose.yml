@@ -1,0 +1,29 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-kiano}
+      POSTGRES_USER: ${POSTGRES_USER:-kiano}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kiano-local}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  minio:
+    # MinIO community images stopped being published after the 2025-09 release,
+    # so the tag is pinned here and in the test suite.
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-kiano}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-kiano-local-secret}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+
+volumes:
+  pg_data:
+  minio_data:
