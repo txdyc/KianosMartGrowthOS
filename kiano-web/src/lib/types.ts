@@ -85,6 +85,17 @@ export interface ReshootLine {
   guidanceZh: string | null;
 }
 
+/**
+ * GET/PUT /api/v1/integrations/woocommerce. An unconfigured GET returns only
+ * {configured: false}; the other fields are then absent.
+ */
+export interface WooStatus {
+  baseUrl?: string;
+  username?: string;
+  configured: boolean;
+  lastSyncAt?: string | null;
+}
+
 /** Read-only view of a platform_task row (GET /api/v1/commerce/sync/latest). */
 export interface TaskView {
   id: number;

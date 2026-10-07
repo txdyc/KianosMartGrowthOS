@@ -47,6 +47,23 @@ export const en = {
 
   // import
   "import.summary": "Imported {n} files",
+  "import.pickFolder": "Choose a folder",
+  "import.pickFiles": "Choose files",
+  "import.willImport": "Will import {n}, skipped {m}",
+  "import.start": "Start import",
+  "import.importing": "Importing…",
+  "import.accepted": "Accepted",
+  "import.reshoot": "Needs reshoot",
+  "import.duplicates": "Duplicates",
+  "import.failed": "Failed",
+  "col.file": "File",
+  "col.shot": "Shot",
+  "col.result": "Result",
+  "col.status": "Status",
+  "status.ACCEPTED": "Accepted",
+  "status.RESHOOT": "Reshoot",
+  "col.state": "State",
+  "col.guidance": "Guidance",
 
   // products list
   "products.searchPlaceholder": "Search SKU or name",
@@ -65,6 +82,26 @@ export const en = {
   "detail.back": "Back to products",
   "detail.complete": "Complete",
   "detail.incomplete": "Incomplete",
+
+  // reshoot list
+  "reshoot.downloadCsv": "Download CSV",
+  "reshoot.csvNote": "The CSV includes the guidance in both Chinese and English.",
+  "reshoot.empty": "No shots need a reshoot.",
+
+  // integration settings
+  "settings.heading": "WooCommerce integration",
+  "settings.baseUrl": "Base URL",
+  "settings.username": "Username",
+  "settings.appPassword": "Application Password",
+  "settings.passwordKeep": "Leave blank to keep the stored password.",
+  "settings.save": "Save",
+  "settings.saved": "Saved.",
+  "settings.test": "Test connection",
+  "settings.testing": "Testing…",
+  "settings.testOk": "Connection OK.",
+  "settings.testFailed": "Connection failed.",
+  "settings.guide":
+    "Create the password in WordPress: Users → your Shop Manager user → Application Passwords → Add New. If the site runs on plain http, set WP_ENVIRONMENT_TYPE=local in wp-config.php, otherwise WordPress refuses REST API authentication.",
 
   // generic
   "loading": "Loading…",

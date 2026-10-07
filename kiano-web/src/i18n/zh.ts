@@ -49,6 +49,23 @@ export const zh: Record<MessageKey, string> = {
 
   // import
   "import.summary": "已导入 {n} 个文件",
+  "import.pickFolder": "选择文件夹",
+  "import.pickFiles": "选择文件",
+  "import.willImport": "将导入 {n} 个，跳过 {m} 个",
+  "import.start": "开始导入",
+  "import.importing": "导入中…",
+  "import.accepted": "合格",
+  "import.reshoot": "需补拍",
+  "import.duplicates": "重复文件",
+  "import.failed": "失败",
+  "col.file": "文件",
+  "col.shot": "镜头",
+  "col.result": "结果",
+  "col.status": "状态",
+  "status.ACCEPTED": "合格",
+  "status.RESHOOT": "需补拍",
+  "col.state": "状态",
+  "col.guidance": "拍摄指引",
 
   // products list
   "products.searchPlaceholder": "搜索 SKU 或名称",
@@ -67,6 +84,26 @@ export const zh: Record<MessageKey, string> = {
   "detail.back": "返回商品列表",
   "detail.complete": "已完成",
   "detail.incomplete": "未完成",
+
+  // reshoot list
+  "reshoot.downloadCsv": "下载 CSV",
+  "reshoot.csvNote": "CSV 中同时包含中英文指引。",
+  "reshoot.empty": "没有需要补拍的镜头。",
+
+  // integration settings
+  "settings.heading": "WooCommerce 集成",
+  "settings.baseUrl": "Base URL",
+  "settings.username": "用户名",
+  "settings.appPassword": "Application Password",
+  "settings.passwordKeep": "留空表示保持已保存的密码。",
+  "settings.save": "保存",
+  "settings.saved": "已保存。",
+  "settings.test": "测试连接",
+  "settings.testing": "测试中…",
+  "settings.testOk": "连接成功。",
+  "settings.testFailed": "连接失败。",
+  "settings.guide":
+    "在 WordPress 中创建：用户 → Shop Manager 用户 → Application Passwords → Add New。站点使用 http 时，需在 wp-config.php 中设置 WP_ENVIRONMENT_TYPE=local，否则 WordPress 会拒绝 REST API 认证。",
 
   // generic
   "loading": "加载中…",
