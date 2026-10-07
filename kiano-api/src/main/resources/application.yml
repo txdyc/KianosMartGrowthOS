@@ -43,3 +43,19 @@ kiano:
     sync-cron: "0 0 * * * *"
   media:
     ffprobe-path: "${KIANO_FFPROBE_PATH:ffprobe}"
+  content:
+    qc:
+      photo:
+        min-short-side: 2000
+        analysis-long-side: 1024
+        blur-min-variance: 60
+        clip-high: 250
+        clip-low: 5
+        max-over-ratio: 0.30
+        max-under-ratio: 0.30
+      video:
+        min-short-side: 1080
+        fps-min: 29.0
+        fps-max: 31.0
+        v1-min-seconds: 10
+        v1-max-seconds: 20
