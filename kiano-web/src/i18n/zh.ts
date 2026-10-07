@@ -26,6 +26,7 @@ export const zh: Record<MessageKey, string> = {
   // ContentTier
   "tier.HERO": "主推（HERO）",
   "tier.STANDARD": "标准（STANDARD）",
+  "tier.all": "全部",
 
   // TaskStatus
   "task.QUEUED": "排队中",
@@ -48,6 +49,27 @@ export const zh: Record<MessageKey, string> = {
 
   // import
   "import.summary": "已导入 {n} 个文件",
+
+  // products list
+  "products.searchPlaceholder": "搜索 SKU 或名称",
+  "sync.now": "立即同步",
+  "sync.last": "上次同步",
+  "sync.never": "尚未同步",
+  "col.image": "图片",
+  "col.sku": "SKU",
+  "col.name": "名称",
+  "col.price": "价格",
+  "col.stock": "库存",
+  "col.tier": "等级",
+  "col.shots": "镜头",
+
+  // product detail
+  "detail.back": "返回商品列表",
+  "detail.complete": "已完成",
+  "detail.incomplete": "未完成",
+
+  // generic
+  "loading": "加载中…",
 
   // error codes
   "error.UNAUTHENTICATED": "请先登录。",

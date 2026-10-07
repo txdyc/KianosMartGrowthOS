@@ -24,6 +24,7 @@ export const en = {
   // ContentTier
   "tier.HERO": "HERO",
   "tier.STANDARD": "STANDARD",
+  "tier.all": "All",
 
   // TaskStatus
   "task.QUEUED": "Queued",
@@ -46,6 +47,27 @@ export const en = {
 
   // import
   "import.summary": "Imported {n} files",
+
+  // products list
+  "products.searchPlaceholder": "Search SKU or name",
+  "sync.now": "Sync now",
+  "sync.last": "Last sync",
+  "sync.never": "Never synced",
+  "col.image": "Image",
+  "col.sku": "SKU",
+  "col.name": "Name",
+  "col.price": "Price",
+  "col.stock": "Stock",
+  "col.tier": "Tier",
+  "col.shots": "Shots",
+
+  // product detail
+  "detail.back": "Back to products",
+  "detail.complete": "Complete",
+  "detail.incomplete": "Incomplete",
+
+  // generic
+  "loading": "Loading…",
 
   // error codes
   "error.UNAUTHENTICATED": "Please sign in to continue.",
