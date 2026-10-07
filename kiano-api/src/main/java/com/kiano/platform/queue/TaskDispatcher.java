@@ -112,8 +112,9 @@ public class TaskDispatcher {
     private void succeed(ClaimedTask claimed, Object result) {
         String resultJson = objectMapper.writeValueAsString(result == null ? Map.of() : result);
         jdbcTemplate.update(
+                // last_error is cleared so a retried-then-succeeded task does not show a stale error.
                 "update platform_task set status='SUCCEEDED', result=?::jsonb, finished_at=?, "
-                        + "locked_by=null, locked_until=null where id=?",
+                        + "last_error=null, locked_by=null, locked_until=null where id=?",
                 resultJson, OffsetDateTime.now(ZoneOffset.UTC), claimed.id());
     }
 

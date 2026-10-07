@@ -131,6 +131,20 @@ class TaskQueueTest {
     }
 
     @Test
+    void successAfterEarlierFailedAttempt_clearsLastError() {
+        jdbcTemplate.update(
+                "insert into platform_task (tenant_id, type, payload, status, attempts, max_attempts, "
+                        + "run_after, last_error) values (?, 'ok', '{}', 'QUEUED', 1, 3, now(), "
+                        + "'WooCommerce is unavailable after 3 attempts')",
+                tenantId);
+        assertThat(dispatcher.pollOnce()).isTrue();
+        TaskView view = queue.latest(tenantId, "ok").orElseThrow();
+        assertThat(view.status()).isEqualTo(TaskStatus.SUCCEEDED);
+        assertThat(view.attempts()).isEqualTo(2);
+        assertThat(view.lastError()).isNull();
+    }
+
+    @Test
     void retryableFailure_atMaxAttempts_fails() {
         queue.enqueue(tenantId, "boom", Map.of(), null);
         jdbcTemplate.update("update platform_task set max_attempts = 1 where type = 'boom'");
