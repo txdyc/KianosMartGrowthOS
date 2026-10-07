@@ -83,6 +83,9 @@ class WooIntegrationControllerTest {
         jdbcTemplate.update("delete from integration");
         jdbcTemplate.update("delete from store where platform = 'WOOCOMMERCE'");
         jdbcTemplate.update("delete from audit_log");
+        jdbcTemplate.update("delete from generation_job");
+        jdbcTemplate.update("delete from generation_run");
+        jdbcTemplate.update("delete from comfy_workflow");
         jdbcTemplate.update("delete from app_user");
         insertUser(OWNER_EMAIL, OWNER_PASSWORD, "OWNER");
         insertUser(OPERATOR_EMAIL, OPERATOR_PASSWORD, "OPERATOR");

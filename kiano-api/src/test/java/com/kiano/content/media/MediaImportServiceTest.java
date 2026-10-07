@@ -78,6 +78,9 @@ class MediaImportServiceTest {
                 Long.class);
         jdbcTemplate.update("delete from source_media");
         jdbcTemplate.update("delete from audit_log");
+        jdbcTemplate.update("delete from generation_job");
+        jdbcTemplate.update("delete from generation_run");
+        jdbcTemplate.update("delete from comfy_workflow");
         jdbcTemplate.update("delete from app_user");
         long userId = jdbcTemplate.queryForObject(
                 "insert into app_user (tenant_id, email, name, password_hash, role) "

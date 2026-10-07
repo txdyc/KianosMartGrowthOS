@@ -51,6 +51,9 @@ class AuthControllerTest {
 
     @BeforeEach
     void seedUsers() {
+        jdbcTemplate.update("delete from generation_job");
+        jdbcTemplate.update("delete from generation_run");
+        jdbcTemplate.update("delete from comfy_workflow");
         jdbcTemplate.update("delete from app_user");
         Long tenantId = jdbcTemplate.queryForObject("select id from tenant where slug = 'kianosmart'", Long.class);
         insertUser(tenantId, OWNER_EMAIL, OWNER_PASSWORD, "OWNER");

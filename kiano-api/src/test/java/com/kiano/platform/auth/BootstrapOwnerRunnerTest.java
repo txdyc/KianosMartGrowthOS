@@ -27,6 +27,9 @@ class BootstrapOwnerRunnerTest {
 
     @Test
     void createsOwnerOnce_whenNoUsers() {
+        jdbcTemplate.update("delete from generation_job");
+        jdbcTemplate.update("delete from generation_run");
+        jdbcTemplate.update("delete from comfy_workflow");
         jdbcTemplate.update("delete from app_user");
         BootstrapOwnerRunner runner = new BootstrapOwnerRunner(jdbcTemplate, userMapper, passwordEncoder,
                 "boot@example.test", "boot-pass-123");
@@ -39,6 +42,9 @@ class BootstrapOwnerRunnerTest {
 
     @Test
     void skipsCreation_whenEmailMissing() {
+        jdbcTemplate.update("delete from generation_job");
+        jdbcTemplate.update("delete from generation_run");
+        jdbcTemplate.update("delete from comfy_workflow");
         jdbcTemplate.update("delete from app_user");
         BootstrapOwnerRunner runner = new BootstrapOwnerRunner(jdbcTemplate, userMapper, passwordEncoder,
                 "", "boot-pass-123");

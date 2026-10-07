@@ -75,6 +75,8 @@ class ProductSyncServiceTest {
                 Long.class);
         jdbcTemplate.update("delete from platform_task");
         jdbcTemplate.update("delete from audit_log");
+        jdbcTemplate.update("delete from generation_job");
+        jdbcTemplate.update("delete from generation_run");
         jdbcTemplate.update("delete from product_profile");
         jdbcTemplate.update("delete from product_category");
         jdbcTemplate.update("delete from product");
