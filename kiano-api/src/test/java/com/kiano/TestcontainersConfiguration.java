@@ -18,7 +18,9 @@ public class TestcontainersConfiguration {
     @Bean
     @ServiceConnection
     PostgreSQLContainer postgres() {
-        return new PostgreSQLContainer("postgres:16-alpine");
+        // stringtype=unspecified lets MyBatis-Plus write String params into jsonb columns.
+        return new PostgreSQLContainer("postgres:16-alpine")
+                .withUrlParam("stringtype", "unspecified");
     }
 
     @Bean
