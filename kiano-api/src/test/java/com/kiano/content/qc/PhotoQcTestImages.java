@@ -12,7 +12,7 @@ import javax.imageio.ImageIO;
  * (20) and near-white (235) cells so that a healthy, sharp image stays below
  * the exposure clipping ratios.
  */
-final class PhotoQcTestImages {
+public final class PhotoQcTestImages {
 
     private static final int CELL = 8;
     private static final int DARK = 20;
@@ -25,16 +25,20 @@ final class PhotoQcTestImages {
      * A checkerboard image that can feed both JPEG encoding and the blur
      * helper without re-reading pixels from a file.
      */
-    static final class Checkerboard {
+    public static final class Checkerboard {
 
         private final BufferedImage image;
 
-        Checkerboard(int width, int height) {
+        public Checkerboard(int width, int height) {
+            this(width, height, CELL);
+        }
+
+        public Checkerboard(int width, int height, int cell) {
             image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
             int[] pixels = new int[width * height];
             for (int y = 0; y < height; y++) {
                 for (int x = 0; x < width; x++) {
-                    boolean bright = ((x / CELL) + (y / CELL)) % 2 == 0;
+                    boolean bright = ((x / cell) + (y / cell)) % 2 == 0;
                     pixels[y * width + x] = gray(bright ? BRIGHT : DARK);
                 }
             }
@@ -46,7 +50,7 @@ final class PhotoQcTestImages {
         }
     }
 
-    static BufferedImage solid(int width, int height, int level) {
+    public static BufferedImage solid(int width, int height, int level) {
         BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
         int[] pixels = new int[width * height];
         for (int i = 0; i < pixels.length; i++) {
@@ -107,13 +111,13 @@ final class PhotoQcTestImages {
         return result;
     }
 
-    static void writeJpeg(BufferedImage image, Path file) throws IOException {
+    public static void writeJpeg(BufferedImage image, Path file) throws IOException {
         try (OutputStream out = Files.newOutputStream(file)) {
             ImageIO.write(image, "jpg", out);
         }
     }
 
-    static void writeJpeg(Checkerboard checkerboard, Path file) throws IOException {
+    public static void writeJpeg(Checkerboard checkerboard, Path file) throws IOException {
         writeJpeg(checkerboard.image(), file);
     }
 
