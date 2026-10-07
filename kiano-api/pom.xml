@@ -168,6 +168,12 @@
       <plugin>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
+        <configuration>
+          <!-- ZIP layout: the same jar boots the api (java -jar) or the worker
+               (-Dloader.main=com.kiano.worker.KianoWorkerApplication). -->
+          <layout>ZIP</layout>
+          <mainClass>com.kiano.KianoApplication</mainClass>
+        </configuration>
       </plugin>
       <!-- Expose ${org.mockito:mockito-core:jar} so Mockito loads as a static agent
            instead of self-attaching at runtime (disallowed by default in future JDKs). -->

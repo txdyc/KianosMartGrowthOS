@@ -1,0 +1,27 @@
+# The kiano-worker process: no web server, no database, no security — it only
+# talks to the api (bearer worker token) and to the object storage via the
+# presigned URLs the api hands out. Booted from the same jar as the api:
+# java -Dloader.main=com.kiano.worker.KianoWorkerApplication
+#      -Dspring.profiles.active=worker -jar kiano-api-*.jar
+spring:
+  main:
+    web-application-type: none
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration
+      - org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration
+      - com.baomidou.mybatisplus.autoconfigure.MybatisPlusAutoConfiguration
+      - org.springframework.boot.security.autoconfigure.SecurityAutoConfiguration
+      - org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration
+      - org.springframework.boot.security.autoconfigure.web.servlet.ServletWebSecurityAutoConfiguration
+      - org.springframework.boot.security.autoconfigure.web.servlet.SecurityFilterAutoConfiguration
+      - org.springframework.boot.security.oauth2.server.resource.autoconfigure.OAuth2ResourceServerAutoConfiguration
+      - org.springframework.boot.security.oauth2.server.resource.autoconfigure.web.OAuth2ResourceServerWebSecurityAutoConfiguration
+
+kiano:
+  worker:
+    api-base-url: ${KIANO_WORKER_API:http://localhost:8081}
+    token: ${KIANO_WORKER_TOKEN}
+    work-dir: ${java.io.tmpdir}/kiano-worker
+    heartbeat-interval: 30s
+    idle-delay: 3s
