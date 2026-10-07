@@ -85,6 +85,7 @@ class MediaImportServiceTest {
                 Long.class, tenantId, passwordEncoder.encode("importer-pass-123"));
         operator = new CurrentUser(userId, tenantId, Role.OPERATOR, "importer@example.test");
 
+        jdbcTemplate.update("delete from product_profile");
         jdbcTemplate.update("delete from product_category");
         jdbcTemplate.update("delete from product");
         jdbcTemplate.update("delete from store where platform = 'WOOCOMMERCE'");

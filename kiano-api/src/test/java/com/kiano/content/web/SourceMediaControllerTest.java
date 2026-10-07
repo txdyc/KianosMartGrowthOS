@@ -74,6 +74,7 @@ class SourceMediaControllerTest {
         insertUser(OPERATOR_EMAIL, OPERATOR_PASSWORD, "OPERATOR");
         insertUser(VIEWER_EMAIL, VIEWER_PASSWORD, "VIEWER");
 
+        jdbcTemplate.update("delete from product_profile");
         jdbcTemplate.update("delete from product_category");
         jdbcTemplate.update("delete from product");
         jdbcTemplate.update("delete from store where platform = 'WOOCOMMERCE'");

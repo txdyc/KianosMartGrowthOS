@@ -38,6 +38,7 @@ class ProductCatalogTest {
     void setUp() {
         tenantId = jdbcTemplate.queryForObject("select id from tenant where slug = 'kianosmart'",
                 Long.class);
+        jdbcTemplate.update("delete from product_profile");
         jdbcTemplate.update("delete from product_category");
         jdbcTemplate.update("delete from product");
         jdbcTemplate.update("delete from category");
