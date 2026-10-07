@@ -146,8 +146,8 @@ public class ComfyUIExecutor implements GenerationExecutor {
         }
         String message = "unknown error";
         for (JsonNode entry : history.path("status").path("messages")) {
-            if ("execution_error".equals(entry.path("type").asString())) {
-                message = entry.path("data").path("exception_message").asString(message);
+            if ("execution_error".equals(entry.path(0).asString())) {
+                message = entry.path(1).path("exception_message").asString(message);
             }
         }
         throw new ExecutorException(
@@ -172,19 +172,23 @@ public class ComfyUIExecutor implements GenerationExecutor {
         }
     }
 
-    /** GPU seconds from history timestamps, or wall-clock time as a fallback. */
+    /**
+     * GPU seconds from history timestamps, or wall-clock time as a fallback.
+     * History messages are [type, data] tuples with epoch-millisecond
+     * timestamps in the data.
+     */
     private static double gpuSeconds(JsonNode history, long startNanos) {
         double start = Double.NaN;
         double end = Double.NaN;
         for (JsonNode message : history.path("status").path("messages")) {
-            if ("execution_start".equals(message.path("type").asString())) {
-                start = message.path("timestamp").asDouble();
-            } else if ("execution_success".equals(message.path("type").asString())) {
-                end = message.path("timestamp").asDouble();
+            if ("execution_start".equals(message.path(0).asString())) {
+                start = message.path(1).path("timestamp").asDouble();
+            } else if ("execution_success".equals(message.path(0).asString())) {
+                end = message.path(1).path("timestamp").asDouble();
             }
         }
         if (!Double.isNaN(start) && !Double.isNaN(end)) {
-            return end - start;
+            return (end - start) / 1000.0;
         }
         return (System.nanoTime() - startNanos) / 1_000_000_000.0;
     }

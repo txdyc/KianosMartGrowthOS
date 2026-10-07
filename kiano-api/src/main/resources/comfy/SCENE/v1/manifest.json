@@ -1,0 +1,38 @@
+{
+  "code": "SCENE",
+  "inputs": {
+    "image": {"node": "1", "field": "image"},
+    "mask": {"node": "2", "field": "image"}
+  },
+  "params": {
+    "positive": {"node": "9", "field": "text"},
+    "negative": {"node": "10", "field": "text"},
+    "seed": {"node": "12", "field": "seed"}
+  },
+  "outputs": {
+    "image": {"node": "16"}
+  },
+  "requiredNodeClasses": [
+    "LoadImage",
+    "LoadImageMask",
+    "ImageScale",
+    "MaskToImage",
+    "ImageToMask",
+    "InvertMask",
+    "CheckpointLoaderSimple",
+    "CLIPTextEncode",
+    "InpaintModelConditioning",
+    "KSampler",
+    "VAEDecode",
+    "ImageCompositeMasked",
+    "SaveImage"
+  ],
+  "models": [
+    {
+      "name": "Juggernaut XL v9 RunDiffusion Photo",
+      "file": "models/checkpoints/Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors",
+      "license": "CreativeML-OpenRAIL++-M",
+      "source": "https://huggingface.co/RunDiffusion/Juggernaut-XL-v9"
+    }
+  ]
+}

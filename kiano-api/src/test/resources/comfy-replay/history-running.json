@@ -1,12 +1,3 @@
 {
-  "it-prompt-1": {
-    "prompt": [],
-    "outputs": {},
-    "status": {
-      "completed": false,
-      "messages": [
-        {"type": "execution_start", "timestamp": 1700000000.0, "data": {"prompt_id": "it-prompt-1"}}
-      ]
-    }
-  }
+ "it-prompt-1": {}
 }

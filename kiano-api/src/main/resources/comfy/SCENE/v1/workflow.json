@@ -1,0 +1,66 @@
+{
+  "1": {
+    "class_type": "LoadImage",
+    "inputs": {"image": "example.png"}
+  },
+  "2": {
+    "class_type": "LoadImageMask",
+    "inputs": {"image": "example.png", "channel": "red"}
+  },
+  "3": {
+    "class_type": "ImageScale",
+    "inputs": {"image": ["1", 0], "upscale_method": "lanczos", "width": 1024, "height": 1024, "crop": "disabled"}
+  },
+  "4": {
+    "class_type": "MaskToImage",
+    "inputs": {"mask": ["2", 0]}
+  },
+  "5": {
+    "class_type": "ImageScale",
+    "inputs": {"image": ["4", 0], "upscale_method": "lanczos", "width": 1024, "height": 1024, "crop": "disabled"}
+  },
+  "6": {
+    "class_type": "ImageToMask",
+    "inputs": {"image": ["5", 0], "channel": "red"}
+  },
+  "7": {
+    "class_type": "InvertMask",
+    "inputs": {"mask": ["6", 0]}
+  },
+  "8": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {"ckpt_name": "Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors"}
+  },
+  "9": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {"text": "a cozy Ghanaian home interior with warm daylight, photorealistic product photography, natural light, high detail", "clip": ["8", 1]}
+  },
+  "10": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {"text": "text, letters, watermark, logo, brand name, US plug, European plug, people, hands, deformed, blurry", "clip": ["8", 1]}
+  },
+  "11": {
+    "class_type": "InpaintModelConditioning",
+    "inputs": {"positive": ["9", 0], "negative": ["10", 0], "vae": ["8", 2], "pixels": ["3", 0], "mask": ["7", 0], "noise_mask": true}
+  },
+  "12": {
+    "class_type": "KSampler",
+    "inputs": {"model": ["8", 0], "seed": 42, "steps": 30, "cfg": 6.0, "sampler_name": "euler", "scheduler": "normal", "denoise": 1.0, "positive": ["11", 0], "negative": ["11", 1], "latent_image": ["11", 2]}
+  },
+  "13": {
+    "class_type": "VAEDecode",
+    "inputs": {"samples": ["12", 0], "vae": ["8", 2]}
+  },
+  "14": {
+    "class_type": "ImageScale",
+    "inputs": {"image": ["13", 0], "upscale_method": "lanczos", "width": 1600, "height": 1600, "crop": "disabled"}
+  },
+  "15": {
+    "class_type": "ImageCompositeMasked",
+    "inputs": {"destination": ["14", 0], "source": ["1", 0], "x": 0, "y": 0, "resize_source": false, "mask": ["2", 0]}
+  },
+  "16": {
+    "class_type": "SaveImage",
+    "inputs": {"images": ["15", 0], "filename_prefix": "kiano/scene"}
+  }
+}

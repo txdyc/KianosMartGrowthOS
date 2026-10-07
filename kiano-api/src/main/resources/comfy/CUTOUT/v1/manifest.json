@@ -1,0 +1,25 @@
+{
+  "code": "CUTOUT",
+  "inputs": {
+    "image": {"node": "1", "field": "image", "maxLongSide": 2400}
+  },
+  "outputs": {
+    "cutout": {"node": "6"}
+  },
+  "requiredNodeClasses": [
+    "LoadImage",
+    "LoadBackgroundRemovalModel",
+    "RemoveBackground",
+    "InvertMask",
+    "JoinImageWithAlpha",
+    "SaveImage"
+  ],
+  "models": [
+    {
+      "name": "BiRefNet",
+      "file": "models/background_removal/birefnet.safetensors",
+      "license": "MIT",
+      "source": "https://github.com/ZhengPeng7/BiRefNet"
+    }
+  ]
+}

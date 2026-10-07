@@ -1,16 +1,57 @@
 {
-  "it-prompt-1": {
-    "prompt": [],
-    "outputs": {
-      "9": {"images": [{"filename": "cutout_00001_.png", "subfolder": "kiano", "type": "output"}]}
-    },
-    "status": {
-      "completed": true,
-      "status_str": "success",
-      "messages": [
-        {"type": "execution_start", "timestamp": 1700000000.0, "data": {"prompt_id": "it-prompt-1"}},
-        {"type": "execution_success", "timestamp": 1700000002.75, "data": {"prompt_id": "it-prompt-1"}}
-      ]
-    }
+ "it-prompt-1": {
+  "outputs": {
+   "6": {
+    "images": [
+     {
+      "filename": "cutout_00009_.png",
+      "subfolder": "kiano",
+      "type": "output"
+     }
+    ]
+   }
+  },
+  "status": {
+   "status_str": "success",
+   "completed": true,
+   "messages": [
+    [
+     "execution_start",
+     {
+      "prompt_id": "ca44dff9-110d-41d1-8bd2-20e90111b331",
+      "timestamp": 1791409212907
+     }
+    ],
+    [
+     "execution_cached",
+     {
+      "nodes": [
+       "1",
+       "2",
+       "3",
+       "4",
+       "5"
+      ],
+      "prompt_id": "ca44dff9-110d-41d1-8bd2-20e90111b331",
+      "timestamp": 1791409212910
+     }
+    ],
+    [
+     "execution_success",
+     {
+      "prompt_id": "ca44dff9-110d-41d1-8bd2-20e90111b331",
+      "timestamp": 1791409213087
+     }
+    ]
+   ]
+  },
+  "meta": {
+   "6": {
+    "node_id": "6",
+    "display_node": "6",
+    "parent_node": null,
+    "real_node_id": "6"
+   }
   }
+ }
 }

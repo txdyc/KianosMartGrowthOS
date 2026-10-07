@@ -21,6 +21,9 @@
     <java.version>21</java.version>
     <!-- Default so @{argLine} resolves even when no other plugin contributes to it. -->
     <argLine></argLine>
+    <!-- Tag groups excluded from regular builds; override with
+         -Dsurefire.excludedGroups= to run the live ComfyUI tests. -->
+    <surefire.excludedGroups>comfy-live</surefire.excludedGroups>
   </properties>
 
   <dependencies>
@@ -192,6 +195,7 @@
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
           <argLine>@{argLine} -javaagent:${org.mockito:mockito-core:jar}</argLine>
+          <excludedGroups>${surefire.excludedGroups}</excludedGroups>
         </configuration>
       </plugin>
     </plugins>

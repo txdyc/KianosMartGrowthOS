@@ -87,7 +87,7 @@ class ComfyUIExecutorTest {
                 .willReturn(okJson(fixture("history-success.json"))));
         byte[] cutoutPng = ImageCodec.png(new BufferedImage(6, 4, BufferedImage.TYPE_INT_RGB));
         comfy.stubFor(get(urlPathEqualTo("/view"))
-                .withQueryParam("filename", equalTo("cutout_00001_.png"))
+                .withQueryParam("filename", equalTo("cutout_00009_.png"))
                 .withQueryParam("subfolder", equalTo("kiano"))
                 .withQueryParam("type", equalTo("output"))
                 .willReturn(aResponse().withBody(cutoutPng)));
@@ -96,7 +96,7 @@ class ComfyUIExecutorTest {
                 .execute(payload("[\"LoadImage\", \"SaveImage\"]"), context());
 
         assertThat(Files.readAllBytes(workDir.resolve("out/cutout.png"))).isEqualTo(cutoutPng);
-        assertThat(result.gpuSeconds()).isCloseTo(2.75, within(1e-6));
+        assertThat(result.gpuSeconds()).isCloseTo(0.18, within(1e-6));
         comfy.verify(1, postRequestedFor(urlPathEqualTo("/upload/image")));
         comfy.verify(1, postRequestedFor(urlPathEqualTo("/prompt")));
         comfy.verify(1, getRequestedFor(urlPathEqualTo("/view")));
@@ -216,11 +216,11 @@ class ComfyUIExecutorTest {
                 {"workflow": {"code": "CUTOUT", "version": 1,
                   "json": {
                     "1": {"class_type": "LoadImage", "inputs": {"image": "placeholder.png"}},
-                    "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "cutout"}}},
+                    "6": {"class_type": "SaveImage", "inputs": {"filename_prefix": "cutout"}}},
                   "manifest": {
                     "code": "CUTOUT",
                     "inputs": {"image": {"node": "1", "field": "image", "maxLongSide": 2400}},
-                    "outputs": {"cutout": {"node": "9"}},
+                    "outputs": {"cutout": {"node": "6"}},
                     "requiredNodeClasses": %s,
                     "models": []}},
                  "params": {},

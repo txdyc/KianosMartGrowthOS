@@ -145,10 +145,47 @@ class WorkflowRegistryTest {
         assertThat(rows.get(0)).containsEntry("version", 1).containsEntry("status", "APPROVED");
     }
 
+    /** The Task 12 baselines must pass full register validation as shipped. */
+    @Test
+    void classpathBaselines_areValid() {
+        WorkflowRegistry.ComfyWorkflowView cutout = registry.register(tenantId,
+                baseline("CUTOUT", "workflow.json"), baseline("CUTOUT", "manifest.json"), null);
+        assertThat(cutout.code()).isEqualTo("CUTOUT");
+        assertThat(cutout.version()).isEqualTo(1);
+        assertThat(cutout.manifest().inputs().get("image").node()).isEqualTo("1");
+        assertThat(cutout.manifest().inputs().get("image").maxLongSide()).isEqualTo(2400);
+        assertThat(cutout.manifest().outputs()).containsKey("cutout");
+        assertThat(cutout.manifest().models()).hasSize(1);
+        assertThat(cutout.manifest().models().get(0).license()).isEqualTo("MIT");
+
+        WorkflowRegistry.ComfyWorkflowView scene = registry.register(tenantId,
+                baseline("SCENE", "workflow.json"), baseline("SCENE", "manifest.json"), null);
+        assertThat(scene.code()).isEqualTo("SCENE");
+        assertThat(scene.manifest().inputs()).containsKeys("image", "mask");
+        assertThat(scene.manifest().params()).containsKeys("positive", "negative", "seed");
+        assertThat(scene.manifest().outputs()).containsKey("image");
+        assertThat(scene.manifest().requiredNodeClasses()).contains(
+                "InpaintModelConditioning", "ImageCompositeMasked", "KSampler");
+        assertThat(scene.manifest().models().get(0).license())
+                .isEqualTo("CreativeML-OpenRAIL++-M");
+    }
+
     private static String fixture(String path) {
         try (InputStream in = WorkflowRegistryTest.class.getResourceAsStream("/comfy-fixtures/" + path)) {
             if (in == null) {
                 throw new IOException("fixture not found: " + path);
+            }
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException ex) {
+            throw new IllegalStateException(ex);
+        }
+    }
+
+    private static String baseline(String code, String file) {
+        try (InputStream in = WorkflowRegistryTest.class.getClassLoader()
+                .getResourceAsStream("comfy/" + code + "/v1/" + file)) {
+            if (in == null) {
+                throw new IOException("baseline not found: comfy/" + code + "/v1/" + file);
             }
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException ex) {

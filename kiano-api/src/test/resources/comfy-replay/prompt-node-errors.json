@@ -1,20 +1,13 @@
 {
-  "error": {
-    "type": "prompt_outputs_failed_validation",
-    "message": "Prompt outputs failed validation",
-    "details": "",
-    "extra_info": {}
-  },
-  "node_errors": {
-    "10": {
-      "errors": [
-        {
-          "type": "value_not_in_list",
-          "message": "Value not in list: 'x'",
-          "details": {"value": "x", "options": ["a", "b"]}
-        }
-      ],
-      "dependent_nodes": []
-    }
+ "error": {
+  "type": "missing_node_type",
+  "message": "Node 'INFLUX_KIANO_NODE' not found. The custom node may not be installed.",
+  "details": "Node ID '#99'",
+  "extra_info": {
+   "node_id": "99",
+   "class_type": "INFLUX_KIANO_NODE",
+   "node_title": "INFLUX_KIANO_NODE"
   }
+ },
+ "node_errors": {}
 }
