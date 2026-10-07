@@ -2,15 +2,13 @@ package com.kiano.content.shots;
 
 import com.kiano.content.ContentTier;
 import com.kiano.content.media.MediaKind;
+import com.kiano.content.text.KeywordMatcher;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
-import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -31,8 +29,6 @@ import org.springframework.stereotype.Service;
 @Service
 public class ShotRequirementService {
 
-    private static final Pattern NON_ALNUM = Pattern.compile("[^a-z0-9]+");
-
     private final JdbcTemplate jdbcTemplate;
 
     public ShotRequirementService(JdbcTemplate jdbcTemplate) {
@@ -50,10 +46,8 @@ public class ShotRequirementService {
                         rs.getString("guidance_en"), rs.getString("guidance_zh"),
                         rs.getInt("sort_order")));
 
-        List<String> normalisedSlugs = categorySlugs == null ? List.of()
-                : categorySlugs.stream().filter(Objects::nonNull)
-                        .map(ShotRequirementService::normalise).toList();
-        String normalisedName = productName == null ? "" : normalise(productName);
+        List<String> normalisedSlugs = KeywordMatcher.normalisedSlugs(categorySlugs);
+        String normalisedName = KeywordMatcher.normaliseName(productName);
 
         Map<String, RequirementRow> genericByCode = new LinkedHashMap<>();
         Map<String, RequirementRow> categoryOverrideByCode = new HashMap<>();
@@ -66,10 +60,11 @@ public class ShotRequirementService {
                 genericByCode.put(row.code(), row);
                 continue;
             }
-            Pattern keyword = keywordPattern(row.category());
-            if (normalisedSlugs.stream().anyMatch(slug -> keyword.matcher(slug).find())) {
+            KeywordMatcher.Match match = KeywordMatcher.matches(row.category(),
+                    normalisedSlugs, normalisedName);
+            if (match == KeywordMatcher.Match.CATEGORY) {
                 categoryOverrideByCode.merge(row.code(), row, ShotRequirementService::lowerSortOrder);
-            } else if (keyword.matcher(normalisedName).find()) {
+            } else if (match == KeywordMatcher.Match.NAME) {
                 nameOverrideByCode.merge(row.code(), row, ShotRequirementService::lowerSortOrder);
             }
         }
@@ -92,17 +87,6 @@ public class ShotRequirementService {
 
     private static RequirementRow lowerSortOrder(RequirementRow a, RequirementRow b) {
         return a.sortOrder() <= b.sortOrder() ? a : b;
-    }
-
-    /** Lower-case and collapse every run of non-alphanumerics to a single '-'. */
-    private static String normalise(String text) {
-        String dashed = NON_ALNUM.matcher(text.toLowerCase(Locale.ROOT)).replaceAll("-");
-        return dashed.replaceAll("^-+|-+$", "");
-    }
-
-    /** Whole-word keyword (words joined by '-') with an optional plural suffix. */
-    private static Pattern keywordPattern(String category) {
-        return Pattern.compile("(^|-)" + Pattern.quote(normalise(category)) + "(s|es)?(-|$)");
     }
 
     /**

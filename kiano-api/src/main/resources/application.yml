@@ -48,6 +48,14 @@ kiano:
   content:
     workflows:
       allowed-licenses: [MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, CreativeML-OpenRAIL++-M]
+    pipeline:
+      angle-shots: [P2, P3, P4, P6]
+      scene-source-shots: [P2, P3, P1]
+      scene-count:
+        STANDARD: 2
+        HERO: 4
+      scene-prompt-suffix: ", Ghanaian home interior, photorealistic product photography, natural light, high detail"
+      scene-negative: "text, letters, watermark, logo, brand name, US plug, European plug, people, hands, deformed, blurry"
     qc:
       photo:
         min-short-side: 2000

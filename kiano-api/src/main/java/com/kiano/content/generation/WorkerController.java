@@ -127,8 +127,8 @@ public class WorkerController {
             throw leaseLost(id);
         }
         // After the completion is committed: fan out downstream work, then
-        // recompute the run status (which sees jobs the listener created).
-        completionListener.ifAvailable(listener -> listener.onSucceeded(completed.get()));
+        // recompute the run status (which sees jobs the listeners created).
+        completionListener.orderedStream().forEach(listener -> listener.onSucceeded(completed.get()));
         runs.refreshStatus(job.runId());
         return ResponseEntity.ok().build();
     }
