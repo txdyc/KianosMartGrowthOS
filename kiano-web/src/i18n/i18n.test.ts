@@ -29,6 +29,11 @@ test("dictionary covers every backend enum and error code", () => {
   const taskStatuses = ["QUEUED", "RUNNING", "SUCCEEDED", "FAILED"];
   const outcomes = ["IMPORTED", "DUPLICATE"];
   const stockStatuses = ["instock", "outofstock", "onbackorder"]; // WooCommerce stock_status values
+  const jobSteps = ["CUTOUT", "SCENE_INPUT", "WHITE_MAIN", "WHITE_ANGLE", "INBOX", "SCENE"];
+  const jobStatuses = ["QUEUED", "LEASED", "WAITING_EXECUTOR", "SUCCEEDED", "FAILED", "CANCELLED"];
+  const runStatuses = ["RUNNING", "DONE", "PARTIAL"];
+  const precheckFlags = ["PRODUCT_MISMATCH", "AI_TEXT", "EDGE_NOT_WHITE", "OCCUPANCY_OUT_OF_RANGE"];
+  const rejectReasons = ["PRODUCT_MISMATCH", "AI_ARTIFACT", "WRONG_FACT", "TEXT_ERROR", "STYLE", "LOW_QUALITY", "POLICY"];
   const errorCodes = [
     "UNAUTHENTICATED",
     "FORBIDDEN",
@@ -45,6 +50,14 @@ test("dictionary covers every backend enum and error code", () => {
     "UNSUPPORTED_FILE_TYPE",
     "UNKNOWN_SKU",
     "UNREADABLE_MEDIA",
+    "PIPELINE_RUNNING",
+    "SHOTS_NOT_READY",
+    "WORKFLOW_NOT_ACTIVE",
+    "JOB_NOT_FAILED",
+    "ASSET_NOT_IN_REVIEW",
+    "LEASE_LOST",
+    "OUTPUT_MISSING",
+    "WORKFLOW_INVALID",
   ];
 
   const required: MessageKey[] = [
@@ -54,6 +67,11 @@ test("dictionary covers every backend enum and error code", () => {
     ...taskStatuses.map((s) => `task.${s}` as MessageKey),
     ...outcomes.map((o) => `outcome.${o}` as MessageKey),
     ...stockStatuses.map((s) => `stock.${s}` as MessageKey),
+    ...jobSteps.map((s) => `step.${s}` as MessageKey),
+    ...jobStatuses.map((s) => `job.${s}` as MessageKey),
+    ...runStatuses.map((s) => `run.${s}` as MessageKey),
+    ...precheckFlags.map((f) => `precheck.${f}` as MessageKey),
+    ...rejectReasons.map((r) => `reject.${r}` as MessageKey),
     ...errorCodes.map((c) => `error.${c}` as MessageKey),
     "error.UNSUPPORTED_FILE_TYPE.heic",
   ];

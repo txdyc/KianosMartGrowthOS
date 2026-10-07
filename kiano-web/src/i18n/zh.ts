@@ -50,6 +50,60 @@ export const zh: Record<MessageKey, string> = {
   "qc.FPS_OUT_OF_RANGE": "帧率超出范围",
   "qc.DURATION_OUT_OF_RANGE": "时长超出范围",
 
+  // JobStep
+  "step.CUTOUT": "抠图",
+  "step.SCENE_INPUT": "场景输入",
+  "step.WHITE_MAIN": "主图白底",
+  "step.WHITE_ANGLE": "角度图白底",
+  "step.INBOX": "开箱图",
+  "step.SCENE": "场景图",
+
+  // JobStatus
+  "job.QUEUED": "排队中",
+  "job.LEASED": "执行中",
+  "job.WAITING_EXECUTOR": "等待执行器",
+  "job.SUCCEEDED": "已完成",
+  "job.FAILED": "失败",
+  "job.CANCELLED": "已取消",
+
+  // RunStatus
+  "run.RUNNING": "进行中",
+  "run.DONE": "已完成",
+  "run.PARTIAL": "部分完成",
+
+  // PrecheckFlag
+  "precheck.PRODUCT_MISMATCH": "产品与实拍图不一致",
+  "precheck.AI_TEXT": "疑似 AI 文字",
+  "precheck.EDGE_NOT_WHITE": "边缘非纯白",
+  "precheck.OCCUPANCY_OUT_OF_RANGE": "产品占比超出范围",
+
+  // RejectReason
+  "reject.PRODUCT_MISMATCH": "产品不符",
+  "reject.AI_ARTIFACT": "AI 伪影",
+  "reject.WRONG_FACT": "事实错误",
+  "reject.TEXT_ERROR": "文字错误",
+  "reject.STYLE": "风格问题",
+  "reject.LOW_QUALITY": "质量不佳",
+  "reject.POLICY": "政策违规",
+
+  // image pipeline panel
+  "pipeline.generate": "生成商品图",
+  "pipeline.starting": "启动中…",
+  "pipeline.workerOnline": "Worker 在线",
+  "pipeline.workerOffline": "Worker 离线",
+  "pipeline.lastSeen": "最后在线 {time}",
+  "pipeline.comfyAvailable": "ComfyUI 可用",
+  "pipeline.comfyUnavailable": "ComfyUI 不可用",
+  "pipeline.confirmTitle": "镜头还不完整",
+  "pipeline.confirmBody": "部分必拍镜头缺失或需补拍。仍要启动图片流水线吗？",
+  "pipeline.confirmGo": "仍然生成",
+  "pipeline.confirmCancel": "取消",
+  "pipeline.latestRun": "最近一次运行",
+  "pipeline.noRun": "还没有运行过流水线。",
+  "pipeline.retry": "重试",
+  "pipeline.attempts": "尝试 {n}/{m}",
+  "pipeline.reviewLink": "去审核（{n} 张待审）",
+
   // import
   "import.summary": "已导入 {n} 个文件",
   "import.pickFolder": "选择文件夹",
@@ -130,4 +184,12 @@ export const zh: Record<MessageKey, string> = {
     "不支持 HEIC 格式。请导出为 JPEG（iPhone：设置 › 相机 › 格式 › 兼容性最佳）。",
   "error.UNKNOWN_SKU": "没有这个 SKU 的商品。请先同步商品，或修改文件名。",
   "error.UNREADABLE_MEDIA": "文件无法读取，可能已损坏或不是真实的照片/视频。",
+  "error.PIPELINE_RUNNING": "该商品已有一个流水线正在运行。",
+  "error.SHOTS_NOT_READY": "请先导入全部必拍镜头（ACCEPTED）再生成图片。",
+  "error.WORKFLOW_NOT_ACTIVE": "没有已激活的工作流版本，请让管理员注册并激活。",
+  "error.JOB_NOT_FAILED": "只有失败的任务才能重试。",
+  "error.ASSET_NOT_IN_REVIEW": "该资产已经审核过了。",
+  "error.LEASE_LOST": "任务租约已丢失，worker 已停止该任务。",
+  "error.OUTPUT_MISSING": "worker 没有上传预期的输出文件。",
+  "error.WORKFLOW_INVALID": "工作流 JSON 不符合契约。",
 };

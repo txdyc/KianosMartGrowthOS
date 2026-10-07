@@ -108,3 +108,99 @@ export interface TaskView {
   startedAt: string | null;
   finishedAt: string | null;
 }
+
+/** Steps of the C2 image pipeline (kiano-api workerprotocol.JobStep). */
+export type JobStep =
+  | "CUTOUT"
+  | "SCENE_INPUT"
+  | "WHITE_MAIN"
+  | "WHITE_ANGLE"
+  | "INBOX"
+  | "SCENE";
+
+/** Lifecycle of a generation job (kiano-api content.generation.JobStatus). */
+export type JobStatus =
+  | "QUEUED"
+  | "LEASED"
+  | "WAITING_EXECUTOR"
+  | "SUCCEEDED"
+  | "FAILED"
+  | "CANCELLED";
+
+/** Executors a worker can run (kiano-api workerprotocol.ExecutorType). */
+export type ExecutorType = "COMFYUI" | "COMPOSITE";
+
+/** Status of a generation run (generation_run.status). */
+export type RunStatus = "RUNNING" | "DONE" | "PARTIAL";
+
+/** Automatic precheck flags stored on an asset (content.asset.PrecheckFlag). */
+export type PrecheckFlag =
+  | "PRODUCT_MISMATCH"
+  | "AI_TEXT"
+  | "EDGE_NOT_WHITE"
+  | "OCCUPANCY_OUT_OF_RANGE";
+
+/** Human reject reasons on the review board (content.asset.RejectReason). */
+export type RejectReason =
+  | "PRODUCT_MISMATCH"
+  | "AI_ARTIFACT"
+  | "WRONG_FACT"
+  | "TEXT_ERROR"
+  | "STYLE"
+  | "LOW_QUALITY"
+  | "POLICY";
+
+/** Lifecycle of an asset (content.asset.AssetStatus). */
+export type AssetStatus = "IN_REVIEW" | "APPROVED" | "REJECTED";
+
+/** One row of GET /api/v1/content/workers. */
+export interface WorkerStatus {
+  workerId: string;
+  lastSeenAt: string;
+  online: boolean;
+  capabilities: ExecutorType[];
+  unavailable: ExecutorType[];
+}
+
+/** One job of GET /api/v1/content/products/{id}/image-pipeline. */
+export interface PipelineJob {
+  id: number;
+  step: JobStep;
+  variant: string | null;
+  executor: ExecutorType;
+  status: JobStatus;
+  attempts: number;
+  maxAttempts: number;
+  error: string | null;
+  gpuSeconds: number | null;
+  createdAt: string;
+  finishedAt: string | null;
+}
+
+/** Latest run of GET /api/v1/content/products/{id}/image-pipeline (204 → undefined). */
+export interface PipelineRun {
+  runId: number;
+  status: RunStatus;
+  createdAt: string;
+  finishedAt: string | null;
+  jobs: PipelineJob[];
+}
+
+/** One row of GET /api/v1/content/assets. */
+export interface ReviewItem {
+  assetId: number;
+  productId: number;
+  sku: string | null;
+  productName: string | null;
+  specCode: string;
+  variant: string | null;
+  version: number;
+  status: AssetStatus;
+  flags: PrecheckFlag[];
+  metrics: Record<string, unknown>;
+  imageUrl: string | null;
+  thumbUrl: string | null;
+  sourceThumbUrl: string | null;
+  sourceUrl: string | null;
+  fileName: string | null;
+}

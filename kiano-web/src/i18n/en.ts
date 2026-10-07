@@ -48,6 +48,60 @@ export const en = {
   "qc.FPS_OUT_OF_RANGE": "Frame rate out of range",
   "qc.DURATION_OUT_OF_RANGE": "Duration out of range",
 
+  // JobStep
+  "step.CUTOUT": "Cutout",
+  "step.SCENE_INPUT": "Scene input",
+  "step.WHITE_MAIN": "Main on white",
+  "step.WHITE_ANGLE": "Angle on white",
+  "step.INBOX": "In-the-box",
+  "step.SCENE": "Scene",
+
+  // JobStatus
+  "job.QUEUED": "Queued",
+  "job.LEASED": "Running",
+  "job.WAITING_EXECUTOR": "Waiting for executor",
+  "job.SUCCEEDED": "Succeeded",
+  "job.FAILED": "Failed",
+  "job.CANCELLED": "Cancelled",
+
+  // RunStatus
+  "run.RUNNING": "Running",
+  "run.DONE": "Done",
+  "run.PARTIAL": "Partial",
+
+  // PrecheckFlag
+  "precheck.PRODUCT_MISMATCH": "Product differs from the source photo",
+  "precheck.AI_TEXT": "Suspicious AI text",
+  "precheck.EDGE_NOT_WHITE": "Edges are not pure white",
+  "precheck.OCCUPANCY_OUT_OF_RANGE": "Product occupancy out of range",
+
+  // RejectReason
+  "reject.PRODUCT_MISMATCH": "Product mismatch",
+  "reject.AI_ARTIFACT": "AI artifact",
+  "reject.WRONG_FACT": "Wrong fact",
+  "reject.TEXT_ERROR": "Text error",
+  "reject.STYLE": "Style",
+  "reject.LOW_QUALITY": "Low quality",
+  "reject.POLICY": "Policy",
+
+  // image pipeline panel
+  "pipeline.generate": "Generate product images",
+  "pipeline.starting": "Starting…",
+  "pipeline.workerOnline": "Worker online",
+  "pipeline.workerOffline": "Worker offline",
+  "pipeline.lastSeen": "Last seen {time}",
+  "pipeline.comfyAvailable": "ComfyUI available",
+  "pipeline.comfyUnavailable": "ComfyUI unavailable",
+  "pipeline.confirmTitle": "Shots not complete",
+  "pipeline.confirmBody": "Some required shots are missing or need a reshoot. Start the image pipeline anyway?",
+  "pipeline.confirmGo": "Generate anyway",
+  "pipeline.confirmCancel": "Cancel",
+  "pipeline.latestRun": "Latest run",
+  "pipeline.noRun": "No pipeline run yet.",
+  "pipeline.retry": "Retry",
+  "pipeline.attempts": "{n}/{m} attempts",
+  "pipeline.reviewLink": "Review ({n} pending)",
+
   // import
   "import.summary": "Imported {n} files",
   "import.pickFolder": "Choose a folder",
@@ -129,6 +183,14 @@ export const en = {
     "HEIC is not supported. Export as JPEG (iPhone: Settings › Camera › Formats › Most Compatible).",
   "error.UNKNOWN_SKU": "No product with this SKU. Sync products first or fix the file name.",
   "error.UNREADABLE_MEDIA": "The file cannot be read. It may be corrupt or not a real photo/video.",
+  "error.PIPELINE_RUNNING": "A pipeline run is already in progress for this product.",
+  "error.SHOTS_NOT_READY": "Import every required shot (ACCEPTED) before generating images.",
+  "error.WORKFLOW_NOT_ACTIVE": "No active workflow version. Ask the owner to register and activate one.",
+  "error.JOB_NOT_FAILED": "Only failed jobs can be retried.",
+  "error.ASSET_NOT_IN_REVIEW": "This asset has already been reviewed.",
+  "error.LEASE_LOST": "The job lease was lost; the worker stopped this job.",
+  "error.OUTPUT_MISSING": "The worker did not upload the expected outputs.",
+  "error.WORKFLOW_INVALID": "The workflow JSON does not satisfy the contract.",
 } as const;
 
 export type MessageKey = keyof typeof en;

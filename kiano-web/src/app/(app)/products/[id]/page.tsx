@@ -4,6 +4,7 @@ import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { apiFetch, ApiError } from "@/lib/api";
 import { errorText, pickGuidance, useI18n } from "@/i18n";
+import { PipelinePanel } from "@/components/PipelinePanel";
 import type { ProductShotStatus, ShotStatusLine } from "@/lib/types";
 
 export default function ProductDetailPage({ params }: PageProps<"/products/[id]">) {
@@ -78,6 +79,8 @@ export default function ProductDetailPage({ params }: PageProps<"/products/[id]"
           {status.complete ? t("detail.complete") : t("detail.incomplete")}
         </span>
       </div>
+
+      <PipelinePanel productId={status.productId} shotsComplete={status.complete} />
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
         {status.lines.map((line) => (
