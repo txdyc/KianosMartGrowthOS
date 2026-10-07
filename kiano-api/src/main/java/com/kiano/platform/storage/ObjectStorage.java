@@ -20,4 +20,10 @@ public interface ObjectStorage {
 
     /** Returns a presigned GET URL valid for the given duration (public-endpoint host). */
     URI presignGet(String key, Duration ttl);
+
+    /** Returns a presigned PUT URL for the given content type (public-endpoint host). */
+    URI presignPut(String key, Duration ttl, String contentType);
+
+    /** Downloads the object's bytes. */
+    byte[] download(String key);
 }

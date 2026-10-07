@@ -29,6 +29,7 @@ import org.springframework.security.oauth2.server.resource.web.BearerTokenResolv
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
+import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -67,6 +68,25 @@ public class SecurityConfig {
     }
 
     @Bean
+    @org.springframework.core.annotation.Order(1)
+    public SecurityFilterChain workerSecurityFilterChain(HttpSecurity http, JwtService jwtService,
+            BearerTokenResolver resolver, ObjectMapper objectMapper,
+            @Value("${kiano.worker.token-sha256:}") String tokenSha256) throws Exception {
+        http
+                .securityMatcher("/api/v1/worker/**")
+                .csrf(CsrfConfigurer::disable)
+                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authorizeHttpRequests(auth -> auth.anyRequest().hasRole("WORKER"))
+                .addFilterBefore(new WorkerTokenFilter(tokenSha256, jwtService, resolver),
+                        AnonymousAuthenticationFilter.class)
+                .exceptionHandling(eh -> eh
+                        .authenticationEntryPoint(apiAuthenticationEntryPoint(objectMapper))
+                        .accessDeniedHandler(apiAccessDeniedHandler(objectMapper)));
+        return http.build();
+    }
+
+    @Bean
+    @org.springframework.core.annotation.Order(2)
     public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtService jwtService,
             ObjectMapper objectMapper) throws Exception {
         http

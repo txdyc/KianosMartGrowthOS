@@ -17,6 +17,7 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
 /**
  * S3/MinIO backed {@link ObjectStorage}. Creates the configured bucket on
@@ -93,5 +94,26 @@ public class S3ObjectStorage implements ObjectStorage, ApplicationRunner {
         } catch (URISyntaxException ex) {
             throw new IllegalStateException("Presigned URL is not a valid URI", ex);
         }
+    }
+
+    @Override
+    public URI presignPut(String key, Duration ttl, String contentType) {
+        PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
+                .signatureDuration(ttl)
+                .putObjectRequest(b -> b.bucket(properties.getBucket()).key(key).contentType(contentType))
+                .build();
+        try {
+            return presigner.presignPutObject(presignRequest).url().toURI();
+        } catch (URISyntaxException ex) {
+            throw new IllegalStateException("Presigned URL is not a valid URI", ex);
+        }
+    }
+
+    @Override
+    public byte[] download(String key) {
+        return s3.getObjectAsBytes(GetObjectRequest.builder()
+                .bucket(properties.getBucket())
+                .key(key)
+                .build()).asByteArray();
     }
 }

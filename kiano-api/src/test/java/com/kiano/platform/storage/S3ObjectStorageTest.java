@@ -60,4 +60,28 @@ class S3ObjectStorageTest {
         assertThat(response.statusCode()).isEqualTo(200);
         assertThat(response.body()).isEqualTo(bytes);
     }
+
+    @Test
+    void presignPut_thenHttpPut_objectExists() throws Exception {
+        URI uri = storage.presignPut("test/presigned-put.bin", Duration.ofMinutes(5), "image/png");
+        URI publicEndpoint = URI.create(properties.getPublicEndpoint());
+        assertThat(uri.getHost()).isEqualTo(publicEndpoint.getHost());
+        assertThat(uri.getPort()).isEqualTo(publicEndpoint.getPort());
+        HttpClient client = HttpClient.newHttpClient();
+        HttpResponse<byte[]> response = client.send(
+                HttpRequest.newBuilder(uri)
+                        .header("Content-Type", "image/png")
+                        .PUT(HttpRequest.BodyPublishers.ofByteArray("png-bytes".getBytes(StandardCharsets.UTF_8)))
+                        .build(),
+                HttpResponse.BodyHandlers.ofByteArray());
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(storage.exists("test/presigned-put.bin")).isTrue();
+    }
+
+    @Test
+    void download_returnsBytes() {
+        byte[] bytes = "download-me".getBytes(StandardCharsets.UTF_8);
+        storage.put("test/download.bin", bytes, "application/octet-stream");
+        assertThat(storage.download("test/download.bin")).isEqualTo(bytes);
+    }
 }

@@ -39,6 +39,8 @@ kiano:
     enabled: true
     poll-interval: 2s
     lease: 15m
+  worker:
+    token-sha256: "${KIANO_WORKER_TOKEN_SHA256:}"
   commerce:
     sync-cron: "0 0 * * * *"
   media:
