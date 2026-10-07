@@ -9,3 +9,5 @@ kiano:
   worker:
     # sha256 of "test-worker-token" (see WorkerAuthTest).
     token-sha256: "3db19f57f0d31e2eae2f1c259df9aa54337feb0a70b59292322d2783febd71ce"
+    # Lease reaper and availability monitor run on demand in tests.
+    monitor-enabled: false

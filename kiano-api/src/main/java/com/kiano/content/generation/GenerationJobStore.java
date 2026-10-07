@@ -198,6 +198,12 @@ public class GenerationJobStore {
                 .stream().findFirst();
     }
 
+    /** Tenant-less lookup for worker-facing endpoints (the api trusts job ids it issued). */
+    public Optional<GenerationJob> findById(long jobId) {
+        return jdbcTemplate.query("select * from generation_job where id=?", mapper, jobId)
+                .stream().findFirst();
+    }
+
     private static String truncate(@Nullable String message) {
         if (message == null) {
             return null;
