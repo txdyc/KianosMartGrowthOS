@@ -226,6 +226,21 @@ class ShotStatusServiceTest {
         assertThat(v1.guidanceZh()).isEqualTo("注水 → 烧开 → 自动断电");
     }
 
+    @Test
+    void productName_drivesV1Guidance_whenNoCategoryMatches() {
+        // MG-FAN16 "Standing Fan 16in" has no category at all.
+        jdbcTemplate.update("insert into product_profile (product_id, tenant_id, role_source, content_tier) "
+                + "values (?, ?, 'MANUAL', 'HERO')", fan16Id, tenantId);
+
+        assertThat(line(service.statusFor(tenantId, fan16Id, false), "V1").guidanceZh())
+                .isEqualTo("开机、调档、摇头");
+        assertThat(service.reshootList(tenantId, null)).filteredOn(r -> r.sku().equals("MG-FAN16")
+                        && r.shotCode().equals("V1"))
+                .singleElement()
+                .extracting(ReshootLine::guidanceEn)
+                .isEqualTo("Switch on, change speed, oscillate");
+    }
+
     private long insertProduct(long storeId, long externalId, Long parentId, String type, String sku,
             String name, String status, String regularPrice, String salePrice, String price) {
         ProductEntity entity = new ProductEntity();

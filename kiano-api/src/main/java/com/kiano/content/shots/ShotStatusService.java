@@ -57,7 +57,7 @@ public class ShotStatusService {
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND",
                         "Product not found"));
         ContentTier tier = profileService.tierOf(tenantId, productId);
-        List<ShotStatusLine> lines = buildLines(tier, product.categorySlugs(),
+        List<ShotStatusLine> lines = buildLines(tier, product,
                 currentMedia(tenantId, productId), withUrls);
         boolean complete = lines.stream().filter(ShotStatusLine::required)
                 .allMatch(line -> line.state() == ShotState.OK);
@@ -85,7 +85,7 @@ public class ShotStatusService {
             int reshoot = 0;
             int missing = 0;
             for (ShotRequirementView requirement : requirementService.requiredFor(tier,
-                    product.categorySlugs())) {
+                    product.categorySlugs(), product.name())) {
                 if (!requirement.required()) {
                     continue;
                 }
@@ -125,7 +125,7 @@ public class ShotStatusService {
         for (ProductView product : products) {
             ContentTier tier = tiers.getOrDefault(product.id(), ContentTier.STANDARD);
             Map<String, SourceMediaEntity> media = mediaByProduct.getOrDefault(product.id(), Map.of());
-            for (ShotStatusLine line : buildLines(tier, product.categorySlugs(), media, false)) {
+            for (ShotStatusLine line : buildLines(tier, product, media, false)) {
                 if (line.state() == ShotState.OK) {
                     continue;
                 }
@@ -137,15 +137,16 @@ public class ShotStatusService {
     }
 
     /**
-     * Checklist lines: the requirements for the tier (with category guidance
-     * overrides), plus any extra current media codes not in the checklist
-     * (e.g. PROMO) as non-required lines.
+     * Checklist lines: the requirements for the tier (with category / product
+     * name guidance overrides), plus any extra current media codes not in the
+     * checklist (e.g. PROMO) as non-required lines.
      */
-    private List<ShotStatusLine> buildLines(ContentTier tier, List<String> categorySlugs,
+    private List<ShotStatusLine> buildLines(ContentTier tier, ProductView product,
             Map<String, SourceMediaEntity> currentMedia, boolean withUrls) {
         List<ShotStatusLine> lines = new ArrayList<>();
         List<String> checklistCodes = new ArrayList<>();
-        for (ShotRequirementView requirement : requirementService.requiredFor(tier, categorySlugs)) {
+        for (ShotRequirementView requirement : requirementService.requiredFor(tier,
+                product.categorySlugs(), product.name())) {
             checklistCodes.add(requirement.code());
             lines.add(toLine(requirement.code(), requirement.kind(), requirement.required(),
                     currentMedia.get(requirement.code()), requirement.guidanceEn(),
