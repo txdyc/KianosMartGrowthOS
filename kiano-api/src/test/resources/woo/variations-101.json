@@ -1,0 +1,60 @@
+[
+  {
+    "id": 1011,
+    "parent_id": 101,
+    "type": "variation",
+    "sku": "MG-FAN16-BLK",
+    "brands": [],
+    "name": "",
+    "slug": "morgan-fan-black",
+    "regular_price": "299",
+    "sale_price": "259",
+    "price": "259",
+    "stock_quantity": 5,
+    "stock_status": "instock",
+    "status": "publish",
+    "permalink": "https://shop.example.com/product/morgan-fan/?attribute_color=black",
+    "image": {
+      "id": 503,
+      "src": "https://shop.example.com/wp-content/uploads/2026/09/morgan-fan-black.jpg"
+    },
+    "date_modified_gmt": "2026-10-02T09:15:00",
+    "attributes": [
+      {
+        "name": "Color",
+        "option": "Black"
+      }
+    ]
+  },
+  {
+    "id": 1012,
+    "parent_id": 101,
+    "type": "variation",
+    "sku": "MG-FAN16-WHT",
+    "brands": [],
+    "name": "",
+    "slug": "morgan-fan-white",
+    "regular_price": "299",
+    "sale_price": "",
+    "price": "299",
+    "stock_quantity": 0,
+    "stock_status": "instock",
+    "status": "publish",
+    "permalink": "https://shop.example.com/product/morgan-fan/?attribute_color=white",
+    "image": {
+      "id": 504,
+      "src": "https://shop.example.com/wp-content/uploads/2026/09/morgan-fan-white.jpg"
+    },
+    "date_modified_gmt": "2026-10-02T09:15:00",
+    "attributes": [
+      {
+        "name": "Color",
+        "option": "White"
+      },
+      {
+        "name": "Size",
+        "option": "M"
+      }
+    ]
+  }
+]

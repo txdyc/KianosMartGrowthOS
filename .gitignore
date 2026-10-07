@@ -1,4 +1,5 @@
 .env
+build/
 kiano-api/target/
 kiano-web/node_modules/
 kiano-web/.next/

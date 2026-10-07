@@ -1,0 +1,20 @@
+[
+  {
+    "id": 11,
+    "parent": 0,
+    "name": "Fans",
+    "slug": "fans"
+  },
+  {
+    "id": 12,
+    "parent": 11,
+    "name": "Ceiling Fans",
+    "slug": "ceiling-fans"
+  },
+  {
+    "id": 13,
+    "parent": 0,
+    "name": "Accessories",
+    "slug": "accessories"
+  }
+]

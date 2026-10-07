@@ -1,0 +1,68 @@
+[
+  {
+    "id": 101,
+    "parent_id": 0,
+    "type": "variable",
+    "sku": "MG-FAN16",
+    "brands": [
+      {
+        "id": 9,
+        "name": "Morgan",
+        "slug": "morgan"
+      }
+    ],
+    "name": "Morgan Fan",
+    "slug": "morgan-fan",
+    "regular_price": "299",
+    "sale_price": "",
+    "price": "299",
+    "stock_quantity": 42,
+    "stock_status": "instock",
+    "status": "publish",
+    "permalink": "https://shop.example.com/product/morgan-fan/",
+    "images": [
+      {
+        "id": 501,
+        "src": "https://shop.example.com/wp-content/uploads/2026/09/morgan-fan.jpg"
+      }
+    ],
+    "date_modified_gmt": "2026-10-01T08:00:00",
+    "categories": [
+      {
+        "id": 11,
+        "name": "Fans",
+        "slug": "fans"
+      },
+      {
+        "id": 12,
+        "name": "Ceiling Fans",
+        "slug": "ceiling-fans"
+      }
+    ]
+  },
+  {
+    "id": 102,
+    "parent_id": 0,
+    "type": "simple",
+    "sku": "MG-LAMP1",
+    "brands": [],
+    "name": "Night Lamp",
+    "slug": "night-lamp",
+    "regular_price": "59.5",
+    "sale_price": "49",
+    "price": "49",
+    "stock_quantity": null,
+    "stock_status": "onbackorder",
+    "status": "publish",
+    "permalink": "https://shop.example.com/product/night-lamp/",
+    "images": [],
+    "date_modified_gmt": "2026-09-20T12:30:00",
+    "categories": [
+      {
+        "id": 12,
+        "name": "Ceiling Fans",
+        "slug": "ceiling-fans"
+      }
+    ]
+  }
+]

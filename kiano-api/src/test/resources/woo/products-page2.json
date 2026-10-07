@@ -1,0 +1,32 @@
+[
+  {
+    "id": 103,
+    "parent_id": 0,
+    "type": "simple",
+    "sku": "MG-ORG7",
+    "brands": [
+      {
+        "id": 9,
+        "name": "Morgan",
+        "slug": "morgan"
+      }
+    ],
+    "name": "Desk Organizer",
+    "slug": "desk-organizer",
+    "regular_price": "25",
+    "sale_price": "",
+    "price": "25",
+    "stock_quantity": 7,
+    "stock_status": "instock",
+    "status": "draft",
+    "permalink": "https://shop.example.com/product/desk-organizer/",
+    "images": [
+      {
+        "id": 502,
+        "src": "https://shop.example.com/wp-content/uploads/2026/09/desk-organizer.jpg"
+      }
+    ],
+    "date_modified_gmt": "2026-09-28T16:45:00",
+    "categories": []
+  }
+]
