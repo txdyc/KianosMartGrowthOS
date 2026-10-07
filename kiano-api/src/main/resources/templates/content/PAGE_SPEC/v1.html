@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; padding: 0; }
+  body {
+    width: 1600px; height: 1600px; background: #ffffff; overflow: hidden;
+    font-family: 'Noto Sans', 'DejaVu Sans', sans-serif; color: #16212b;
+    padding: 100px 110px; box-sizing: border-box;
+  }
+  h1 { font-size: 60px; line-height: 1.15; font-weight: 700; margin: 0 0 12px;
+       overflow-wrap: anywhere; }
+  .model { font-size: 30px; color: #5a6b7a; margin-bottom: 56px;
+           overflow-wrap: anywhere; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  th, td {
+    font-size: 33px; line-height: 1.4; text-align: left; vertical-align: top;
+    padding: 26px 24px 26px 0; border-bottom: 3px solid #e3e8ee;
+    overflow-wrap: anywhere;
+  }
+  th { width: 420px; padding-right: 40px; color: #33475b; font-weight: 700; }
+</style>
+</head>
+<body>
+  <h1>{{productName}}</h1>
+  {{#model}}<div class="model">Model {{model}}</div>{{/model}}
+  <table>
+    <tbody>
+      {{#rows}}<tr><th scope="row">{{label}}</th><td>{{value}}</td></tr>{{/rows}}
+    </tbody>
+  </table>
+</body>
+</html>
