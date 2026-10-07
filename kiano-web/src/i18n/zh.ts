@@ -33,6 +33,9 @@ export const zh: Record<MessageKey, string> = {
   "task.RUNNING": "进行中",
   "task.SUCCEEDED": "已完成",
   "task.FAILED": "失败",
+  "stock.instock": "有货",
+  "stock.outofstock": "缺货",
+  "stock.onbackorder": "可预订",
 
   // ImportResult.outcome
   "outcome.IMPORTED": "已导入",
@@ -103,7 +106,7 @@ export const zh: Record<MessageKey, string> = {
   "settings.testOk": "连接成功。",
   "settings.testFailed": "连接失败。",
   "settings.guide":
-    "在 WordPress 中创建：用户 → Shop Manager 用户 → Application Passwords → Add New。站点使用 http 时，需在 wp-config.php 中设置 WP_ENVIRONMENT_TYPE=local，否则 WordPress 会拒绝 REST API 认证。",
+    "在 WordPress 中创建：用户 → Shop Manager 用户 → Application Passwords → Add New。站点使用 http 时，需在 wp-config.php 中设置 WP_ENVIRONMENT_TYPE=local，否则 WordPress 会拒绝 REST API 认证。如果 Kiano 运行在 Docker 中、店铺在同一台电脑上，Base URL 请填 http://host.docker.internal:8080——在容器里，localhost 指的是容器自己。",
 
   // generic
   "loading": "加载中…",

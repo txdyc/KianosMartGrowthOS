@@ -66,3 +66,15 @@ export function errorText(t: TFunction, err: ApiError): string {
   }
   return err.message;
 }
+
+/**
+ * Localized WooCommerce stock_status; unknown values (e.g. added by a plugin)
+ * are shown as-is rather than hidden.
+ */
+export function stockText(t: TFunction, stockStatus: string | null | undefined): string {
+  if (!stockStatus) {
+    return "—";
+  }
+  const key = `stock.${stockStatus}` as MessageKey;
+  return key in en ? t(key) : stockStatus;
+}

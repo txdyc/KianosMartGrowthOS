@@ -31,6 +31,9 @@ export const en = {
   "task.RUNNING": "Running",
   "task.SUCCEEDED": "Succeeded",
   "task.FAILED": "Failed",
+  "stock.instock": "In stock",
+  "stock.outofstock": "Out of stock",
+  "stock.onbackorder": "On backorder",
 
   // ImportResult.outcome
   "outcome.IMPORTED": "Imported",
@@ -101,7 +104,7 @@ export const en = {
   "settings.testOk": "Connection OK.",
   "settings.testFailed": "Connection failed.",
   "settings.guide":
-    "Create the password in WordPress: Users → your Shop Manager user → Application Passwords → Add New. If the site runs on plain http, set WP_ENVIRONMENT_TYPE=local in wp-config.php, otherwise WordPress refuses REST API authentication.",
+    "Create the password in WordPress: Users → your Shop Manager user → Application Passwords → Add New. If the site runs on plain http, set WP_ENVIRONMENT_TYPE=local in wp-config.php, otherwise WordPress refuses REST API authentication. When Kiano runs in Docker and the store runs on this same computer, use http://host.docker.internal:8080 as the Base URL — inside a container, localhost is the container itself.",
 
   // generic
   "loading": "Loading…",

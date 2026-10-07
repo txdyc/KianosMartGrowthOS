@@ -59,8 +59,19 @@ docker compose run --rm wpcli wp user application-password create kiano-sync kia
 - Application Password **只在** Kiano 设置页输入（设置 → 集成），不写进任何文件。
 - 如果本地商店没有商品：`wp wc product create --user=1 ...` 创建测试商品（simple/variable 均可）。
 
-连接步骤：Kiano 设置页填入 `http://localhost:8080`、`kiano-sync` 和 Application Password →
+连接步骤：Kiano 设置页填入 Base URL、`kiano-sync` 和 Application Password →
 Test connection 返回 ok → 商品页 Sync now → 商品、变体、分类、价格同步入库。
+
+Base URL 取决于 api 在哪里运行：
+
+| api 运行方式 | Base URL |
+|---|---|
+| 全容器（`docker compose --profile app up`） | `http://host.docker.internal:8080` |
+| 本地 `./mvnw spring-boot:run` | `http://localhost:8080` |
+
+容器里的 `localhost` 指向 api 容器自己，填 `http://localhost:8080` 会得到
+`WooCommerce is unavailable after 3 attempts: I/O error ...`。商品图片地址仍是 Woo 生成的
+`http://localhost:8080/...`，浏览器可以正常访问。
 
 ## 文档
 

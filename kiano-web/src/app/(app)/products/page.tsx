@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { apiFetch, ApiError } from "@/lib/api";
 import { formatGhs } from "@/lib/format";
 import { canOperate, useMe } from "@/lib/me";
-import { errorText, useI18n } from "@/i18n";
+import { errorText, stockText, useI18n } from "@/i18n";
 import type { ContentProductSummary, ContentTier, TaskView } from "@/lib/types";
 
 type TierFilter = "ALL" | ContentTier;
@@ -198,7 +198,7 @@ export default function ProductsPage() {
                   ) : null}
                   {formatGhs(p.price)}
                 </td>
-                <td className={cellClass}>{p.stockStatus}</td>
+                <td className={cellClass}>{stockText(t, p.stockStatus)}</td>
                 <td className={cellClass} onClick={(e) => e.stopPropagation()}>
                   {operate ? (
                     <select

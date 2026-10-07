@@ -10,6 +10,7 @@ export {
   errorText,
   makeT,
   pickGuidance,
+  stockText,
   LOCALE_COOKIE,
 } from "./shared";
 export type { Locale, MessageKey, TFunction } from "./shared";

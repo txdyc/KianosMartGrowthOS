@@ -2,7 +2,7 @@ import { expect, test } from "vitest";
 import { ApiError } from "../lib/api";
 import { en, type MessageKey } from "./en";
 import { zh } from "./zh";
-import { detectLocale, errorText, makeT, pickGuidance } from "./index";
+import { detectLocale, errorText, makeT, pickGuidance, stockText } from "./index";
 
 test("zh and en have exactly the same keys and no empty values", () => {
   expect(Object.keys(zh).sort()).toEqual(Object.keys(en).sort());
@@ -28,6 +28,7 @@ test("dictionary covers every backend enum and error code", () => {
   const tiers = ["HERO", "STANDARD"];
   const taskStatuses = ["QUEUED", "RUNNING", "SUCCEEDED", "FAILED"];
   const outcomes = ["IMPORTED", "DUPLICATE"];
+  const stockStatuses = ["instock", "outofstock", "onbackorder"]; // WooCommerce stock_status values
   const errorCodes = [
     "UNAUTHENTICATED",
     "FORBIDDEN",
@@ -52,6 +53,7 @@ test("dictionary covers every backend enum and error code", () => {
     ...tiers.map((t) => `tier.${t}` as MessageKey),
     ...taskStatuses.map((s) => `task.${s}` as MessageKey),
     ...outcomes.map((o) => `outcome.${o}` as MessageKey),
+    ...stockStatuses.map((s) => `stock.${s}` as MessageKey),
     ...errorCodes.map((c) => `error.${c}` as MessageKey),
     "error.UNSUPPORTED_FILE_TYPE.heic",
   ];
@@ -92,6 +94,13 @@ test("errorText falls back to message and handles heic", () => {
       new ApiError(422, "UNSUPPORTED_FILE_TYPE", "unsupported", undefined, { extension: "heic" }),
     ),
   ).toBe(zh["error.UNSUPPORTED_FILE_TYPE.heic"]);
+});
+
+test("stockText localizes Woo stock statuses and falls back to the raw value", () => {
+  expect(stockText(makeT("zh"), "instock")).toBe(zh["stock.instock"]);
+  expect(stockText(makeT("en"), "outofstock")).toBe(en["stock.outofstock"]);
+  expect(stockText(makeT("zh"), "some-plugin-status")).toBe("some-plugin-status");
+  expect(stockText(makeT("zh"), null)).toBe("—");
 });
 
 test("pickGuidance returns the column for the locale", () => {
