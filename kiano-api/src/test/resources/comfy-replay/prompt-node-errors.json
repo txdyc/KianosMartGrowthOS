@@ -1,0 +1,20 @@
+{
+  "error": {
+    "type": "prompt_outputs_failed_validation",
+    "message": "Prompt outputs failed validation",
+    "details": "",
+    "extra_info": {}
+  },
+  "node_errors": {
+    "10": {
+      "errors": [
+        {
+          "type": "value_not_in_list",
+          "message": "Value not in list: 'x'",
+          "details": {"value": "x", "options": ["a", "b"]}
+        }
+      ],
+      "dependent_nodes": []
+    }
+  }
+}

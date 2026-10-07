@@ -5,6 +5,7 @@ import com.kiano.platform.audit.ActorType;
 import com.kiano.platform.audit.AuditEntry;
 import com.kiano.platform.audit.AuditLog;
 import com.kiano.platform.web.ApiException;
+import com.kiano.workerprotocol.WorkflowManifest;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;

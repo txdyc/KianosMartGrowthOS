@@ -25,3 +25,5 @@ kiano:
     work-dir: ${java.io.tmpdir}/kiano-worker
     heartbeat-interval: 30s
     idle-delay: 3s
+    comfy:
+      base-url: ${KIANO_COMFY_URL:http://127.0.0.1:8188}

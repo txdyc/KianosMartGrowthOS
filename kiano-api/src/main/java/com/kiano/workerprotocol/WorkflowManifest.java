@@ -1,4 +1,4 @@
-package com.kiano.content.workflow;
+package com.kiano.workerprotocol;
 
 import java.util.List;
 import java.util.Map;
@@ -7,7 +7,8 @@ import org.jspecify.annotations.Nullable;
 /**
  * Binding manifest uploaded alongside a workflow: which nodes and fields the
  * api fills in for inputs, params and outputs, plus the model inventory used
- * for commercial-license checks. Mirrors the manifest format in the C2 plan.
+ * for commercial-license checks. Travels inside input_json to the worker, so
+ * it lives with the rest of the shared protocol.
  */
 public record WorkflowManifest(String code,
         @Nullable Map<String, Binding> inputs,

@@ -1,0 +1,14 @@
+{
+  "it-prompt-1": {
+    "prompt": [],
+    "outputs": {},
+    "status": {
+      "completed": true,
+      "status_str": "error",
+      "messages": [
+        {"type": "execution_start", "timestamp": 1700000000.0, "data": {"prompt_id": "it-prompt-1"}},
+        {"type": "execution_error", "timestamp": 1700000001.25, "data": {"prompt_id": "it-prompt-1", "exception_type": "torch.cuda.OutOfMemoryError", "exception_message": "CUDA out of memory", "node_id": "11", "node_type": "KSampler"}}
+      ]
+    }
+  }
+}

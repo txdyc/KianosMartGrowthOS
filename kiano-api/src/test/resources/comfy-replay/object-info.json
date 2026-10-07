@@ -1,0 +1,23 @@
+{
+  "LoadImage": {
+    "input": {"required": ["image"]},
+    "output": ["IMAGE"],
+    "name": "LoadImage",
+    "display_name": "Load Image",
+    "category": "image"
+  },
+  "LoadImageMask": {
+    "input": {"required": ["image"]},
+    "output": ["MASK"],
+    "name": "LoadImageMask",
+    "display_name": "Load Image (as Mask)",
+    "category": "image"
+  },
+  "SaveImage": {
+    "input": {"required": ["images"]},
+    "output": [],
+    "name": "SaveImage",
+    "display_name": "Save Image",
+    "category": "image"
+  }
+}
