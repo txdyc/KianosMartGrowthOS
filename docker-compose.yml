@@ -19,10 +19,39 @@ services:
       - "9001:9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-kiano}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-kiano-local-secret}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-kiano-local}
     command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data
+
+  # The app itself only runs with --profile app, so `docker compose up -d`
+  # keeps starting just the infrastructure for local dev.
+  api:
+    profiles: ["app"]
+    build: kiano-api
+    env_file: .env
+    environment:
+      # Inside the compose network the services talk to each other; only the
+      # browser-facing public endpoint stays on localhost.
+      KIANO_DB_URL: jdbc:postgresql://postgres:5432/kiano?stringtype=unspecified
+      KIANO_STORAGE_ENDPOINT: http://minio:9000
+    ports:
+      - "8081:8081"
+    depends_on:
+      - postgres
+      - minio
+
+  web:
+    profiles: ["app"]
+    build:
+      context: kiano-web
+      args:
+        # The browser runs on the host, so it reaches the API via the mapped port.
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8081}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
 
 volumes:
   pg_data:
