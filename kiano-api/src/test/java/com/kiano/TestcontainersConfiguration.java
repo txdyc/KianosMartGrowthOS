@@ -32,7 +32,7 @@ public class TestcontainersConfiguration {
     }
 
     @Bean
-    DynamicPropertyRegistrar storageProperties(MinIOContainer minio) {
+    DynamicPropertyRegistrar storageDynamicProperties(MinIOContainer minio) {
         return registry -> {
             registry.add("kiano.storage.endpoint", minio::getS3URL);
             registry.add("kiano.storage.public-endpoint", minio::getS3URL);
