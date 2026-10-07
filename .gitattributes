@@ -1,0 +1,23 @@
+# LF in the repository and in working trees on every OS (matches KianosMart).
+* text=auto eol=lf
+
+# Windows-only scripts keep CRLF in the working tree so cmd.exe reads them reliably.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary assets: never touch line endings or diff as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.heic binary
+*.mp4 binary
+*.mov binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.pdf binary
+*.jar binary
