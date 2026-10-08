@@ -77,6 +77,16 @@ test("dictionary covers every backend enum and error code", () => {
     "WOO_CHANGED_SINCE_PUBLISH",
     "TEXT_HTML_NOT_ALLOWED",
     "WOO_IMAGE_ORDER_CHANGED",
+    "PROVIDER_IN_USE",
+    "ROUTE_REQUIRES_VISION",
+    "LLM_BASE_URL_INVALID",
+    "LLM_PROVIDER_NAME_TAKEN",
+    "LLM_MODEL_NO_VISION",
+    "LLM_INVALID_OUTPUT",
+    "LLM_CONFIG",
+    "LLM_BAD_REQUEST",
+    "LLM_VISION_CHECK_FAILED",
+    "LLM_TRUNCATED",
   ];
 
   const required: MessageKey[] = [

@@ -274,3 +274,70 @@ export interface NeedsRepublishItem {
   productName: string | null;
   reasons: Array<"POLICY_CHANGED" | "FACTS_CHANGED">;
 }
+
+/** LLM task purposes that can be routed (kiano-api LlmPurpose). */
+export type LlmPurpose = "FACT_DRAFT" | "COPY";
+
+/** Provider kind (kiano-api ProviderKind). */
+export type ProviderKind = "ANTHROPIC" | "OPENAI_COMPATIBLE";
+
+/** Per-model price in USD per million tokens (kiano-api Pricing). */
+export interface Pricing {
+  inputPerMtok: number;
+  outputPerMtok: number;
+  cacheReadPerMtok: number;
+}
+
+/** One provider row of GET /api/v1/settings/llm (kiano-api ProviderView). */
+export interface ProviderView {
+  id: number;
+  name: string;
+  kind: ProviderKind;
+  baseUrl: string | null;
+  hasKey: boolean;
+  status: string;
+  updatedAt: string;
+}
+
+/** One route row of GET /api/v1/settings/llm (kiano-api RouteView). */
+export interface RouteView {
+  purpose: LlmPurpose;
+  providerId: number | null;
+  model: string | null;
+  supportsImages: boolean;
+  pricing: Pricing | null;
+  usingDefault: boolean;
+}
+
+/** One preset model (kiano-api settings PresetModel). */
+export interface PresetModel {
+  model: string;
+  supportsImages: boolean;
+  pricing: Pricing;
+}
+
+/** One provider preset (kiano-api settings Preset). */
+export interface Preset {
+  code: string;
+  name: string;
+  kind: ProviderKind;
+  baseUrl: string | null;
+  models: PresetModel[];
+}
+
+/** Result of POST /api/v1/settings/llm/routes/{purpose}/test. */
+export interface TestResult {
+  ok: boolean;
+  model: string | null;
+  latencyMs: number;
+  costUsd: number | null;
+  code: string | null;
+  message: string | null;
+}
+
+/** GET /api/v1/settings/llm. */
+export interface LlmSettingsView {
+  providers: ProviderView[];
+  routes: RouteView[];
+  presets: Preset[];
+}

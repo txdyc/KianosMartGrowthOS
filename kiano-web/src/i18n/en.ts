@@ -11,6 +11,7 @@ export const en = {
   "nav.settings": "Settings",
   "nav.facts": "Facts",
   "nav.policy": "Store policy",
+  "nav.aiModels": "AI models",
   "nav.logout": "Logout",
 
   // login
@@ -306,6 +307,48 @@ export const en = {
   "facts.copy.status": "Status",
   "facts.copyFlags": "{n} precheck flags",
 
+  // LLM provider & routing settings
+  "llm.heading": "AI models",
+  "llm.guide":
+    "Add providers (Anthropic or OpenAI-compatible, e.g. DeepSeek) and choose which model writes fact drafts - it must be able to see images - and which writes copy. Purposes without a configured route keep using the .env default (Claude).",
+  "llm.kind.ANTHROPIC": "Anthropic",
+  "llm.kind.OPENAI_COMPATIBLE": "OpenAI-compatible",
+  "llm.providers": "Providers",
+  "llm.add": "Add provider",
+  "llm.preset": "Preset",
+  "llm.providerName": "Name",
+  "llm.baseUrl": "Base URL",
+  "llm.apiKey": "API key",
+  "llm.apiKeyAdd": "Required when creating",
+  "llm.apiKeyKeep": "Leave blank to keep the stored key.",
+  "llm.save": "Save",
+  "llm.saved": "Saved.",
+  "llm.edit": "Edit",
+  "llm.delete": "Delete",
+  "llm.cancel": "Cancel",
+  "llm.deleteConfirm": "Delete this provider? Existing routes must point elsewhere first.",
+  "llm.resetConfirm": "Restore the .env default route for this task?",
+  "llm.hasKey": "key stored",
+  "llm.noKey": "no key",
+  "llm.routes": "Task routing",
+  "llm.purpose.FACT_DRAFT": "Fact drafts",
+  "llm.purpose.COPY": "Copy",
+  "llm.provider": "Provider",
+  "llm.defaultRoute": "Uses the .env default (Claude)",
+  "llm.model": "Model",
+  "llm.modelHint": "Pick a preset model or type a custom id",
+  "llm.supportsImages": "Supports images",
+  "llm.price.input": "Input $/MTok",
+  "llm.price.output": "Output $/MTok",
+  "llm.price.cache": "Cache read $/MTok",
+  "llm.test": "Test connection",
+  "llm.testing": "Testing…",
+  "llm.testOk": "Connection OK.",
+  "llm.testFailed": "Connection failed.",
+  "llm.reset": "Restore default",
+  "llm.warning.visionRequired": "Fact drafts need a model that can see images.",
+  "llm.testDetail": "{model} · {latency} ms · ${cost}",
+
   // generic
   "loading": "Loading…",
 
@@ -356,6 +399,16 @@ export const en = {
   "error.WOO_CHANGED_SINCE_PUBLISH": "The product was modified in Woo after this publish.",
   "error.TEXT_HTML_NOT_ALLOWED": "Only plain formatting is allowed in this text field.",
   "error.WOO_IMAGE_ORDER_CHANGED": "WooCommerce did not apply the image order as expected.",
+  "error.PROVIDER_IN_USE": "This provider is still used by a route; point the route elsewhere first.",
+  "error.ROUTE_REQUIRES_VISION": "Fact drafts need a model that can see images.",
+  "error.LLM_BASE_URL_INVALID": "An OpenAI-compatible base URL must start with https://.",
+  "error.LLM_PROVIDER_NAME_TAKEN": "A provider with this name already exists.",
+  "error.LLM_MODEL_NO_VISION": "The selected model cannot see images; pick a vision-capable model.",
+  "error.LLM_INVALID_OUTPUT": "The AI returned output that does not fit the required format. Fill it in manually.",
+  "error.LLM_CONFIG": "The provider rejected the API key. Check the credentials in AI models settings.",
+  "error.LLM_BAD_REQUEST": "The provider rejected the request; check the model id and parameters.",
+  "error.LLM_VISION_CHECK_FAILED": "The connection check could not recognise the probe image; this model cannot see images.",
+  "error.LLM_TRUNCATED": "The AI output was cut off; increase the token budget or simplify the request.",
 } as const;
 
 export type MessageKey = keyof typeof en;
