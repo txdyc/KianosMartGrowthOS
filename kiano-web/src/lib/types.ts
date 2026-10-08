@@ -138,7 +138,10 @@ export type PrecheckFlag =
   | "PRODUCT_MISMATCH"
   | "AI_TEXT"
   | "EDGE_NOT_WHITE"
-  | "OCCUPANCY_OUT_OF_RANGE";
+  | "OCCUPANCY_OUT_OF_RANGE"
+  | "FACT_MISMATCH"
+  | "FORBIDDEN_CLAIM"
+  | "POLICY_PENDING";
 
 /** Human reject reasons on the review board (content.asset.RejectReason). */
 export type RejectReason =
@@ -203,4 +206,47 @@ export interface ReviewItem {
   sourceThumbUrl: string | null;
   sourceUrl: string | null;
   fileName: string | null;
+  kind: string | null;
+  textBody: string | null;
+  charCount: number | null;
+  factVersion: number | null;
+}
+
+/** Provenance of one fact-sheet field (content.facts.FieldSource). */
+export type FieldSource = "P5" | "PROMO" | "WOO_TEXT" | "MANUAL" | "NONE";
+
+/** The structured facts of a product (content.facts.FactsJson). */
+export interface FactsJson {
+  model: string | null;
+  category: string | null;
+  capacity: string | null;
+  powerW: number | null;
+  voltage: string | null;
+  material: string | null;
+  colour: string | null;
+  warranty: string | null;
+  inBox: string[] | null;
+  features: string[] | null;
+  benefits: string[] | null;
+  forbiddenClaims: string[] | null;
+}
+
+/** One fact-sheet row (content.facts.FactSheetView). */
+export interface FactSheetView {
+  id: number;
+  productId: number;
+  version: number;
+  status: "DRAFT" | "LOCKED" | "SUPERSEDED";
+  facts: FactsJson;
+  fieldSources: Record<string, FieldSource>;
+  sourceMediaIds?: number[];
+  lockedAt: string | null;
+  lockedBy: string | null;
+}
+
+/** GET /api/v1/content/products/{id}/facts. */
+export interface FactSheetResponse {
+  current?: FactSheetView;
+  locked?: FactSheetView;
+  sources: Record<string, { id: number; url: string }>;
 }

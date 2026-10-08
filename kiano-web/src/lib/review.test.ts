@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { groupBySku, keyToDecision, nextFocus } from "./review";
+import { charLimit, groupBySku, keyToDecision, nextFocus } from "./review";
 import type { ReviewItem } from "./types";
 
 function item(assetId: number, sku: string, status: ReviewItem["status"] = "IN_REVIEW"): ReviewItem {
@@ -19,6 +19,10 @@ function item(assetId: number, sku: string, status: ReviewItem["status"] = "IN_R
     sourceThumbUrl: null,
     sourceUrl: null,
     fileName: null,
+    kind: null,
+    textBody: null,
+    charCount: null,
+    factVersion: null,
   };
 }
 
@@ -74,13 +78,25 @@ describe("nextFocus", () => {
 });
 
 describe("keyToDecision", () => {
-  test("maps a/A, r, g and ignores others", () => {
+  test("maps a/A, r, g, e and ignores others", () => {
     expect(keyToDecision("a")).toBe("APPROVE");
     expect(keyToDecision("A")).toBe("APPROVE");
     expect(keyToDecision("r")).toBe("REJECT");
     expect(keyToDecision("g")).toBe("REGENERATE");
+    expect(keyToDecision("e")).toBe("EDIT");
     expect(keyToDecision("x")).toBeNull();
     expect(keyToDecision("ArrowLeft")).toBeNull();
     expect(keyToDecision("")).toBeNull();
+  });
+});
+
+describe("charLimit", () => {
+  test("returns the backend limits and null for unknown specs", () => {
+    expect(charLimit("COPY_TITLE")).toBe(120);
+    expect(charLimit("COPY_GSHOP")).toBe(150);
+    expect(charLimit("COPY_SEO", "title")).toBe(60);
+    expect(charLimit("COPY_SEO", "description")).toBe(155);
+    expect(charLimit("COPY_LONG")).toBeNull();
+    expect(charLimit("PAGE_MAIN")).toBeNull();
   });
 });

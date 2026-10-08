@@ -10,7 +10,8 @@ import { en } from "@/i18n/en";
 import { groupBySku, keyToDecision, nextFocus } from "@/lib/review";
 import type { Decision, ReviewGroup } from "@/lib/review";
 import { RejectDialog } from "@/components/RejectDialog";
-import type { RejectReason, ReviewItem } from "@/lib/types";
+import { TextAssetCard } from "@/components/TextAssetCard";
+import type { FactsJson, RejectReason, ReviewItem } from "@/lib/types";
 
 const secondaryButton =
   "rounded-md border border-zinc-300 px-3 py-1 text-sm transition-colors hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800";
@@ -50,11 +51,20 @@ function ReviewBoard() {
   const [confirmingProductId, setConfirmingProductId] = useState<number | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [kind, setKind] = useState<"all" | "IMAGE" | "TEXT">("all");
+  // assetId of the text being edited inline; while non-null, A/R/G shortkeys
+  // are disabled so typing "a" / "r" / "g" never triggers a decision.
+  const [editingId, setEditingId] = useState<number | null>(null);
+  // Locked facts per product for the summary panel on text cards.
+  const [factsByProduct, setFactsByProduct] = useState<Record<number, FactsJson | null>>({});
 
   const load = useCallback(() => {
     const query = new URLSearchParams({ status: "IN_REVIEW" });
     if (productId !== null) {
       query.set("productId", String(productId));
+    }
+    if (kind !== "all") {
+      query.set("kind", kind);
     }
     return apiFetch<ReviewItem[]>(`/api/v1/content/assets?${query.toString()}`)
       .then((rows) => {
@@ -71,7 +81,7 @@ function ReviewBoard() {
         setItems([]);
         setError(err instanceof ApiError ? errorText(t, err) : t("error.INTERNAL_ERROR"));
       });
-  }, [productId, t]);
+  }, [productId, kind, t]);
 
   useEffect(() => {
     void load();
@@ -107,6 +117,17 @@ function ReviewBoard() {
       }
     },
     [items, focusedId, load, t],
+  );
+
+  const saveEdit = useCallback(
+    async (item: ReviewItem, body: string) => {
+      await apiFetch(`/api/v1/content/assets/${item.assetId}/text`, {
+        method: "PUT",
+        body: { textBody: body },
+      });
+      await load();
+    },
+    [load],
   );
 
   const approveRemaining = useCallback(
@@ -149,6 +170,36 @@ function ReviewBoard() {
     [order, focusedId],
   );
 
+  const loadFacts = useCallback(
+    (productIds: number[]) => {
+      const unique = [...new Set(productIds)];
+      for (const pid of unique) {
+        if (pid in factsByProduct) {
+          continue;
+        }
+        void apiFetch<{ locked?: { facts: FactsJson } }>(
+          `/api/v1/content/products/${pid}/facts`,
+        )
+          .then((data) => {
+            setFactsByProduct((prev) => ({
+              ...prev,
+              [pid]: data.locked?.facts ?? null,
+            }));
+          })
+          .catch(() => {
+            setFactsByProduct((prev) => ({ ...prev, [pid]: null }));
+          });
+      }
+    },
+    [factsByProduct],
+  );
+
+  useEffect(() => {
+    if (items !== null) {
+      loadFacts(items.map((i) => i.productId));
+    }
+  }, [items, loadFacts]);
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (rejecting !== null || confirmingProductId !== null) {
@@ -162,7 +213,11 @@ function ReviewBoard() {
           target.tagName === "SELECT" ||
           target.isContentEditable)
       ) {
-        return; // typing context — the caller ignores shortcut keys
+        // typing context (inline edit box, filters) — all shortcuts off
+        if (target.tagName === "TEXTAREA" && event.key === "Escape") {
+          setEditingId(null);
+        }
+        return;
       }
       if (event.ctrlKey || event.metaKey || event.altKey) {
         return;
@@ -189,6 +244,12 @@ function ReviewBoard() {
         return;
       }
       event.preventDefault();
+      if (decision === "EDIT") {
+        if (focused.kind === "TEXT" || focused.specCode.startsWith("COPY_")) {
+          setEditingId(focused.assetId);
+        }
+        return;
+      }
       if (decision === "REJECT") {
         setRejecting(focused);
         return;
@@ -219,6 +280,20 @@ function ReviewBoard() {
 
   return (
     <div className="flex flex-col gap-6">
+      <div className="flex flex-wrap items-center gap-3">
+        {(["all", "IMAGE", "TEXT"] as const).map((value) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setKind(value)}
+            className={
+              kind === value ? primaryButton : secondaryButton
+            }
+          >
+            {t(`review.filters.${value}`)}
+          </button>
+        ))}
+      </div>
       {operate && order.length > 0 ? (
         <p className="text-xs text-zinc-500 dark:text-zinc-400">{t("review.hint")}</p>
       ) : null}
@@ -278,15 +353,31 @@ function ReviewBoard() {
             </div>
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {group.items.map((item) => (
-                <ReviewCard
-                  key={item.assetId}
-                  item={item}
-                  focused={item.assetId === focusedId}
-                  busy={item.assetId === busyId}
-                  onFocus={() => setFocusedId(item.assetId)}
-                />
-              ))}
+              {group.items.map((item) =>
+                item.kind === "TEXT" || item.specCode.startsWith("COPY_") ? (
+                  <TextAssetCard
+                    key={item.assetId}
+                    item={item}
+                    focused={item.assetId === focusedId}
+                    busy={item.assetId === busyId}
+                    editing={editingId === item.assetId}
+                    onFocus={() => setFocusedId(item.assetId)}
+                    onEditingChange={(active) =>
+                      setEditingId(active ? item.assetId : null)
+                    }
+                    onSave={(body) => saveEdit(item, body)}
+                    facts={factsByProduct[item.productId] ?? null}
+                  />
+                ) : (
+                  <ReviewCard
+                    key={item.assetId}
+                    item={item}
+                    focused={item.assetId === focusedId}
+                    busy={item.assetId === busyId}
+                    onFocus={() => setFocusedId(item.assetId)}
+                  />
+                ),
+              )}
             </div>
           </section>
         ))

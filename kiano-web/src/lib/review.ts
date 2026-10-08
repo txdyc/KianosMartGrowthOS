@@ -8,7 +8,26 @@ export interface ReviewGroup {
   items: ReviewItem[];
 }
 
-export type Decision = "APPROVE" | "REJECT" | "REGENERATE";
+export type Decision = "APPROVE" | "REJECT" | "REGENERATE" | "EDIT";
+
+/** Char limits for editable copy specs (kWoo admin + trade titles). */
+const CHAR_LIMITS: Record<string, number> = {
+  COPY_SEO_TITLE: 60,
+  COPY_SEO_DESCRIPTION: 155,
+  COPY_TITLE: 120,
+  COPY_GSHOP: 150,
+};
+
+/**
+ * Max characters of a copy spec, or for SEO the title/description part.
+ * Unknown specs (and SEO without a part) return null — no enforced limit.
+ */
+export function charLimit(specCode: string, part?: "title" | "description"): number | null {
+  if (specCode === "COPY_SEO") {
+    return part === "title" ? CHAR_LIMITS.COPY_SEO_TITLE : CHAR_LIMITS.COPY_SEO_DESCRIPTION;
+  }
+  return CHAR_LIMITS[specCode] ?? null;
+}
 
 /**
  * Groups review assets by SKU. Group order and the order within a group both
@@ -76,7 +95,7 @@ export function nextFocus(
 
 /**
  * Keyboard shortcut → decision. Callers ignore keys while focus is in an
- * input. Only a/A map to APPROVE per the board spec; r and g are lowercase.
+ * input. Only a/A map to APPROVE per the board spec; r, g and e are lowercase.
  */
 export function keyToDecision(key: string): Decision | null {
   switch (key) {
@@ -87,6 +106,8 @@ export function keyToDecision(key: string): Decision | null {
       return "REJECT";
     case "g":
       return "REGENERATE";
+    case "e":
+      return "EDIT";
     default:
       return null;
   }
