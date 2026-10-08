@@ -1,6 +1,7 @@
 package com.kiano.content.policy;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.kiano.content.copy.PlainText;
 import com.kiano.content.template.TemplateRegistry;
 import com.kiano.platform.audit.ActorType;
 import com.kiano.platform.audit.AuditEntry;
@@ -33,7 +34,7 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public class PolicyService {
 
-    public record SectionText(String title, String body) {
+    public record SectionText(String title, String body, @Nullable String badge) {
     }
 
     public record PolicyView(int version, Map<PolicySection, SectionText> sections,
@@ -62,11 +63,12 @@ public class PolicyService {
 
     @Transactional
     public PolicyView save(CurrentUser user, Map<PolicySection, SectionText> sections) {
+        Map<PolicySection, SectionText> normalized = normalize(sections);
         StorePolicyEntity latest = latestRow(user.tenantId());
         StorePolicyEntity row = new StorePolicyEntity();
         row.setTenantId(user.tenantId());
         row.setVersion(latest == null ? 1 : latest.getVersion() + 1);
-        row.setSectionsJson(objectMapper.writeValueAsString(sections));
+        row.setSectionsJson(objectMapper.writeValueAsString(normalized));
         row.setUpdatedBy(user.userId());
         row.setCreatedAt(OffsetDateTime.now(ZoneOffset.UTC));
         mapper.insert(row);
@@ -76,6 +78,57 @@ public class PolicyService {
                 null, "POLICY"));
         events.publishEvent(new PolicyChangedEvent(user.tenantId(), row.getVersion()));
         return toView(row);
+    }
+
+    /** Trims badges, blanks become null; rejects too-long or HTML badges. */
+    private Map<PolicySection, SectionText> normalize(Map<PolicySection, SectionText> sections) {
+        Map<PolicySection, SectionText> normalized = new EnumMap<>(PolicySection.class);
+        for (Map.Entry<PolicySection, SectionText> entry : sections.entrySet()) {
+            SectionText text = entry.getValue();
+            String badge = text.badge() == null ? null : text.badge().trim();
+            if (badge != null && badge.isEmpty()) {
+                badge = null;
+            }
+            if (badge != null && badge.length() > 40) {
+                throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "VALIDATION_FAILED",
+                        "Policy badges must be at most 40 characters");
+            }
+            if (badge != null && PlainText.hasMarkup(badge)) {
+                throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "VALIDATION_FAILED",
+                        "Policy badges cannot contain HTML");
+            }
+            normalized.put(entry.getKey(),
+                    new SectionText(text.title(), text.body(), badge));
+        }
+        return normalized;
+    }
+
+    /**
+     * The short badges the ad trust hook renders: COD, MoMo and delivery must
+     * each carry one, otherwise 409 POLICY_BADGES_MISSING with the missing
+     * sections listed.
+     */
+    public Map<PolicySection, String> requireAdBadges(long tenantId) {
+        PolicyView view = current(tenantId).orElse(null);
+        Map<PolicySection, String> badges = new EnumMap<>(PolicySection.class);
+        List<String> missing = new ArrayList<>();
+        for (PolicySection section : List.of(PolicySection.COD, PolicySection.MOMO,
+                PolicySection.DELIVERY)) {
+            SectionText text = view == null ? null : view.sections().get(section);
+            String badge = text == null || text.badge() == null ? null
+                    : text.badge().trim();
+            if (badge == null || badge.isEmpty()) {
+                missing.add(section.name());
+            } else {
+                badges.put(section, badge);
+            }
+        }
+        if (!missing.isEmpty()) {
+            throw new ApiException(HttpStatus.CONFLICT, "POLICY_BADGES_MISSING",
+                    "COD, MoMo and delivery badges are required for the ad trust hook",
+                    Map.of("missing", missing));
+        }
+        return badges;
     }
 
     /** Latest policy or 409 POLICY_INCOMPLETE listing the empty sections. */
@@ -155,7 +208,9 @@ public class PolicyService {
             String name = entry.getKey();
             String title = entry.getValue().path("title").asText("");
             String body = entry.getValue().path("body").asText("");
-            sections.put(PolicySection.valueOf(name), new SectionText(title, body));
+            String badge = entry.getValue().path("badge").isTextual()
+                    ? entry.getValue().path("badge").asText() : null;
+            sections.put(PolicySection.valueOf(name), new SectionText(title, body, badge));
         });
         boolean complete = true;
         for (PolicySection section : PolicySection.values()) {

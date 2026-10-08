@@ -127,7 +127,7 @@ class PublicationFlowTest {
         Map<PolicySection, SectionText> sections = new EnumMap<>(PolicySection.class);
         for (PolicySection section : PolicySection.values()) {
             sections.put(section, new SectionText(section.name(),
-                    section == PolicySection.DELIVERY ? deliveryBody : "Body " + section));
+                    section == PolicySection.DELIVERY ? deliveryBody : "Body " + section, null));
         }
         PolicyService.PolicyView view = policyService.save(owner, sections);
         // A policy save enqueues POLICY_RERENDER (covered by PolicyRerenderTest);

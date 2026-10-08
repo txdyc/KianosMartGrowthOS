@@ -139,7 +139,7 @@ class PolicyRerenderTest {
         for (com.kiano.content.policy.PolicySection section
                 : com.kiano.content.policy.PolicySection.values()) {
             sections.put(section, new SectionText("T " + section, "B " + section + " v"
-                    + version));
+                    + version, null));
         }
         policyService.save(owner, sections);
     }

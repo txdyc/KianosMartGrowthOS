@@ -207,7 +207,7 @@ class CopyGenerationTaskHandlerTest {
                 new EnumMap<>(com.kiano.content.policy.PolicySection.class);
         for (com.kiano.content.policy.PolicySection section
                 : com.kiano.content.policy.PolicySection.values()) {
-            sections.put(section, new SectionText("T " + section, "B " + section));
+            sections.put(section, new SectionText("T " + section, "B " + section, null));
         }
         long ownerId = jdbcTemplate.queryForObject(
                 "insert into app_user (tenant_id, email, name, password_hash, role) "
