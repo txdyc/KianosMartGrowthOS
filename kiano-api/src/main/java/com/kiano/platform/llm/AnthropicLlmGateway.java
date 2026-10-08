@@ -109,24 +109,25 @@ public class AnthropicLlmGateway implements LlmGateway {
         long output = usage.outputTokens();
         long cacheRead = usage.cacheReadInputTokens().orElse(0L);
         long cacheWrite = usage.cacheCreationInputTokens().orElse(0L);
+        // Refused and truncated calls are billed too, so they carry a cost.
+        BigDecimal cost = cost(input, output, cacheRead);
         if (stopReason == StopReason.REFUSAL) {
             String category = message.stopDetails().flatMap(d -> d.category())
                     .map(c -> c.asString()).orElse(null);
             recorder.record(new LlmCallRecorder.LlmCallRow(request.tenantId(), request.purpose(),
                     properties.getModel(), "REFUSED", input, output, cacheRead, cacheWrite,
-                    null, latencyMs, stopReasonText, null));
+                    cost, latencyMs, stopReasonText, null));
             throw new LlmRefusedException("Claude refused the request"
                     + (category == null ? "" : " (category: " + category + ")"), category);
         }
         if (stopReason == StopReason.MAX_TOKENS) {
             recorder.record(new LlmCallRecorder.LlmCallRow(request.tenantId(), request.purpose(),
                     properties.getModel(), "TRUNCATED", input, output, cacheRead, cacheWrite,
-                    null, latencyMs, stopReasonText, null));
-            throw new LlmTruncatedException(
-                    "Claude hit max_tokens; retry with a doubled token budget");
+                    cost, latencyMs, stopReasonText, null));
+            throw new LlmTruncatedException("Claude hit max_tokens (" + request.maxTokens()
+                    + "); the output is incomplete");
         }
         T parsed = parse(request.outputType(), message);
-        BigDecimal cost = cost(input, output, cacheRead);
         long callId = recorder.record(new LlmCallRecorder.LlmCallRow(request.tenantId(),
                 request.purpose(), properties.getModel(), "OK", input, output, cacheRead,
                 cacheWrite, cost, latencyMs, stopReasonText, null));

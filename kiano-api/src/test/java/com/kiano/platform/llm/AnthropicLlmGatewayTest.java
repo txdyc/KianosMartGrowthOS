@@ -141,20 +141,26 @@ class AnthropicLlmGatewayTest {
         verify(recorder).record(row.capture());
         assertThat(row.getValue().status()).isEqualTo("REFUSED");
         assertThat(row.getValue().stopReason()).isEqualTo("refusal");
+        // Refused calls are still billed for the tokens they used.
+        assertThat(row.getValue().costUsd()).isNotNull();
     }
 
     @Test
-    void maxTokens_throwsTruncated() {
+    void maxTokens_throwsNonRetryableTruncated_andRecordsBilledCost() {
         stubResponse(200, "max-tokens.json");
 
+        // Not retryable: re-sending the same request with the same budget would
+        // truncate again and bill the full output each time.
         assertThatThrownBy(() -> gateway.complete(request(LlmRequest.Effort.HIGH, 16000)))
                 .isInstanceOfSatisfying(LlmTruncatedException.class, ex -> {
                     assertThat(ex.code()).isEqualTo("LLM_TRUNCATED");
-                    assertThat(ex.retryable()).isTrue();
+                    assertThat(ex.retryable()).isFalse();
                 });
         ArgumentCaptor<LlmCallRow> row = ArgumentCaptor.forClass(LlmCallRow.class);
         verify(recorder).record(row.capture());
         assertThat(row.getValue().status()).isEqualTo("TRUNCATED");
+        // 90 input × $4/M + 1999 output × $20/M
+        assertThat(row.getValue().costUsd()).isEqualByComparingTo(new BigDecimal("0.040340"));
     }
 
     @Test
