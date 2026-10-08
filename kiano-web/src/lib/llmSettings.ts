@@ -1,5 +1,5 @@
 import type { MessageKey } from "@/i18n";
-import type { LlmPurpose, Preset } from "./types";
+import type { LlmPurpose, Preset, ProviderKind, ProviderView } from "./types";
 
 /** Values that applying a preset model fills into the route form. */
 export interface PresetModelValues {
@@ -41,4 +41,29 @@ export function routeWarning(
   return purpose === "FACT_DRAFT" && !supportsImages
     ? "llm.warning.visionRequired"
     : null;
+}
+/** The provider add/edit form fields. */
+export interface ProviderForm {
+  name: string;
+  baseUrl: string;
+  apiKey: string;
+}
+
+/**
+ * Body for POST/PUT /api/v1/settings/llm/providers. When editing, the kind is
+ * the edited provider's own kind: the add-form preset selector may still point
+ * at another preset, and the backend rejects kind changes. A blank base URL is
+ * sent as null; a blank key on edit means "keep the stored key".
+ */
+export function providerRequestBody(
+  form: ProviderForm,
+  presetKind: ProviderKind,
+  editing: ProviderView | null,
+): { name: string; kind: ProviderKind; baseUrl: string | null; apiKey: string } {
+  return {
+    name: form.name.trim(),
+    kind: editing !== null ? editing.kind : presetKind,
+    baseUrl: form.baseUrl.trim() || null,
+    apiKey: form.apiKey,
+  };
 }

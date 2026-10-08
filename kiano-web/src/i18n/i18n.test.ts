@@ -86,6 +86,8 @@ test("dictionary covers every backend enum and error code", () => {
     "LLM_CONFIG",
     "LLM_BAD_REQUEST",
     "LLM_VISION_CHECK_FAILED",
+    "LLM_TEST_FAILED",
+    "LLM_PROVIDER_KIND_IMMUTABLE",
     "LLM_TRUNCATED",
   ];
 

@@ -408,6 +408,8 @@ export const en = {
   "error.LLM_CONFIG": "The provider rejected the API key. Check the credentials in AI models settings.",
   "error.LLM_BAD_REQUEST": "The provider rejected the request; check the model id and parameters.",
   "error.LLM_VISION_CHECK_FAILED": "The connection check could not recognise the probe image; this model cannot see images.",
+  "error.LLM_TEST_FAILED": "The connection test failed unexpectedly. Check the provider settings and key, then try again.",
+  "error.LLM_PROVIDER_KIND_IMMUTABLE": "A provider's type cannot be changed. Add a new provider instead.",
   "error.LLM_TRUNCATED": "The AI output was cut off; increase the token budget or simplify the request.",
 } as const;
 

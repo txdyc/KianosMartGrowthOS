@@ -5,13 +5,12 @@ import type { FormEvent } from "react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { isOwner, useMe } from "@/lib/me";
 import { errorText, useI18n } from "@/i18n";
-import { applyPresetModel, routeWarning } from "@/lib/llmSettings";
+import { applyPresetModel, providerRequestBody, routeWarning } from "@/lib/llmSettings";
 import type {
   LlmPurpose,
   LlmSettingsView,
   Preset,
   PresetModel,
-  ProviderKind,
   ProviderView,
   TestResult,
 } from "@/lib/types";
@@ -87,13 +86,8 @@ function ProvidersSection({
     setBusy(true);
     setError(null);
     setSaved(false);
-    const kind: ProviderKind = selectedPreset.kind;
-    const body = {
-      name: form.name.trim(),
-      kind,
-      baseUrl: form.baseUrl.trim() || null,
-      apiKey: form.apiKey,
-    };
+    const editing = providers.find((p) => p.id === editingId) ?? null;
+    const body = providerRequestBody(form, selectedPreset.kind, editing);
     try {
       if (editingId !== null) {
         await apiFetch(`/api/v1/settings/llm/providers/${editingId}`, { method: "PUT", body });

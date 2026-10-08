@@ -409,5 +409,7 @@ export const zh: Record<MessageKey, string> = {
   "error.LLM_CONFIG": "提供商拒绝了该 API key，请在 AI 模型设置中检查凭据。",
   "error.LLM_BAD_REQUEST": "提供商拒绝了请求，请检查模型 ID 与参数。",
   "error.LLM_VISION_CHECK_FAILED": "连接测试无法识别测试图，该模型不能看图。",
+  "error.LLM_TEST_FAILED": "连接测试意外失败，请检查提供商设置和 key 后重试。",
+  "error.LLM_PROVIDER_KIND_IMMUTABLE": "提供商类型不能修改，请新增一个提供商。",
   "error.LLM_TRUNCATED": "AI 输出被截断，请调大 token 上限或简化请求。",
 };
