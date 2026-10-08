@@ -32,6 +32,8 @@ import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -84,6 +86,8 @@ class PublishTaskHandlerTest {
                 asset(6L, "PAGE_ANGLE", "P3", "IMAGE", "MG-BL200_page-a3_real_1600x1600_v1.jpg"));
         when(assetMapper.selectById(7L)).thenReturn(
                 asset(7L, "PAGE_ANGLE", "P4", "IMAGE", "MG-BL200_page-a4_real_1600x1600_v1.jpg"));
+        when(assetMapper.selectById(3L)).thenReturn(asset(3L, "COPY_TITLE", "default", "TEXT", null));
+        when(assetMapper.selectById(4L)).thenReturn(asset(4L, "COPY_SHORT", "default", "TEXT", null));
         when(assetMapper.selectList(any())).thenReturn(new ArrayList<>());
 
         ReviewService reviewService = mock(ReviewService.class);
@@ -111,7 +115,8 @@ class PublishTaskHandlerTest {
         when(storage.download(any())).thenReturn(new byte[]{1, 2, 3});
 
         handler = new PublishTaskHandler(publicationMapper, assetMapper, storage,
-                reviewService, catalog, factory, mock(AuditLog.class), MAPPER);
+                reviewService, catalog, factory, mock(AuditLog.class), MAPPER,
+                new TransactionTemplate(mock(PlatformTransactionManager.class)));
     }
 
     private static AssetEntity asset(long id, String spec, String variant, String kind,

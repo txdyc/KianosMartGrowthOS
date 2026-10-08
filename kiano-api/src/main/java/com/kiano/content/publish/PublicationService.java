@@ -39,6 +39,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -55,6 +56,8 @@ public class PublicationService {
             "COPY_SHORT", "COPY_LONG");
     private static final int MIN_ANGLES = 3;
     private static final String OPTIONAL_SEO = "COPY_SEO";
+    private static final Set<String> LIVE_STATUSES = Set.of(AssetStatus.APPROVED.name(),
+            AssetStatus.PUBLISHED.name());
 
     private final PublicationMapper mapper;
     private final com.kiano.content.asset.AssetMapper assetMapper;
@@ -67,13 +70,14 @@ public class PublicationService {
     private final CommercePublisherFactory publisherFactory;
     private final AuditLog auditLog;
     private final ObjectMapper objectMapper;
+    private final TransactionTemplate transactionTemplate;
 
     public PublicationService(PublicationMapper mapper,
             com.kiano.content.asset.AssetMapper assetMapper, ReviewService reviewService,
             PolicyService policyService, FactSheetService factSheetService,
             ProductCatalog productCatalog, AppUserMapper appUserMapper, TaskQueue queue,
             CommercePublisherFactory publisherFactory, AuditLog auditLog,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper, TransactionTemplate transactionTemplate) {
         this.mapper = mapper;
         this.assetMapper = assetMapper;
         this.reviewService = reviewService;
@@ -85,6 +89,7 @@ public class PublicationService {
         this.publisherFactory = publisherFactory;
         this.auditLog = auditLog;
         this.objectMapper = objectMapper;
+        this.transactionTemplate = transactionTemplate;
     }
 
     @Transactional
@@ -93,7 +98,7 @@ public class PublicationService {
         productCatalog.findById(user.tenantId(), productId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND",
                         "Product not found"));
-        List<ReviewItem> approved = reviewService.list(user, productId, "APPROVED", null);
+        List<ReviewItem> approved = liveContent(reviewService.list(user, productId, null, null));
         List<String> missing = missingRequired(approved);
         if (!missing.isEmpty()) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "PUBLISH_PRECONDITIONS",
@@ -123,6 +128,7 @@ public class PublicationService {
         entity.setArchivedAssetIds("[]");
         entity.setStatus("PENDING");
         entity.setNeedsAttention(false);
+        entity.setPublishedBy(user.userId());
         entity.setCreatedAt(OffsetDateTime.now(ZoneOffset.UTC));
         mapper.insert(entity);
         Optional<Long> taskId = queue.enqueue(user.tenantId(), PublishTaskHandler.TYPE,
@@ -254,7 +260,7 @@ public class PublicationService {
         requireRole(user, environment);
         Optional<PublicationEntity> latest = latestApplied(user.tenantId(),
                 publication.getProductId(), environment);
-        if (latest.isEmpty() || latest.get().getId() != publication.getId()
+        if (latest.isEmpty() || !latest.get().getId().equals(publication.getId())
                 || !"APPLIED".equals(publication.getStatus())) {
             throw new ApiException(HttpStatus.CONFLICT, "NOT_LATEST_PUBLICATION",
                     "Only the latest APPLIED publication can be rolled back");
@@ -274,11 +280,7 @@ public class PublicationService {
         }
         WooProductSnapshot before = objectMapper.readValue(publication.getBeforeJson(),
                 WooProductSnapshot.class);
-        publisher.updateContent(current.id(), new ProductContentUpdate(before.name(),
-                before.description(), before.shortDescription(),
-                before.images().stream().map(WooProductSnapshot.WooImageRef::id).toList(),
-                before.rankMath() == null ? null : before.rankMath().title(),
-                before.rankMath() == null ? null : before.rankMath().description()));
+        publisher.updateContent(current.id(), ProductContentUpdate.restoring(before));
         for (Long mediaId : readIdList(publication.getUploadedMediaIds())) {
             try {
                 publisher.deleteMedia(mediaId);
@@ -286,22 +288,43 @@ public class PublicationService {
                 // a single media delete failure never aborts the rollback
             }
         }
-        publication.setStatus("ROLLED_BACK");
-        publication.setNeedsAttention(false);
-        if (environment == PublishEnvironment.PRODUCTION) {
-            revertAssetStatuses(publication);
-        }
-        mapper.updateById(publication);
-        auditLog.record(new AuditEntry(user.tenantId(), ActorType.USER,
-                String.valueOf(user.userId()), "PUBLICATION_ROLLED_BACK", "publication",
-                String.valueOf(publication.getId()),
-                Map.of("environment", environment.name(), "force", force), null, null, "PUBLISH"));
+        // Status reversal, the publication row and its audit entry commit together.
+        transactionTemplate.executeWithoutResult(tx -> {
+            publication.setStatus("ROLLED_BACK");
+            publication.setNeedsAttention(false);
+            if (environment == PublishEnvironment.PRODUCTION) {
+                revertAssetStatuses(publication);
+            }
+            mapper.updateById(publication);
+            auditLog.record(new AuditEntry(user.tenantId(), ActorType.USER,
+                    String.valueOf(user.userId()), "PUBLICATION_ROLLED_BACK", "publication",
+                    String.valueOf(publication.getId()),
+                    Map.of("environment", environment.name(), "force", force), null, null,
+                    "PUBLISH"));
+        });
         return toView(user, publication);
     }
 
+    /**
+     * The content a publish writes: for every spec/variant, the newest version
+     * that is APPROVED or already PUBLISHED. Older approved versions (e.g. the
+     * pre-policy-change COPY_LONG) and newer versions still in review are
+     * ignored, and a republish keeps the live PUBLISHED assets it doesn't replace.
+     */
+    static List<ReviewItem> liveContent(List<ReviewItem> all) {
+        Map<String, ReviewItem> latest = new LinkedHashMap<>();
+        for (ReviewItem item : all) {
+            if (!LIVE_STATUSES.contains(item.status())) {
+                continue;
+            }
+            latest.merge(item.specCode() + "/" + item.variant(), item,
+                    (a, b) -> a.version() >= b.version() ? a : b);
+        }
+        return new ArrayList<>(latest.values());
+    }
+
     /** PRODUCTION rollback: published → approved; archived-during-publish → published. */
-    @Transactional
-    protected void revertAssetStatuses(PublicationEntity publication) {
+    private void revertAssetStatuses(PublicationEntity publication) {
         for (Long assetId : readIdList(publication.getAssetIds())) {
             com.kiano.content.asset.AssetEntity asset = assetMapper.selectById(assetId);
             if (asset != null && AssetStatus.PUBLISHED.name().equals(asset.getStatus())) {
@@ -398,7 +421,7 @@ public class PublicationService {
         boolean canRollback = "APPLIED".equals(row.getStatus())
                 && latestApplied(row.getTenantId(), row.getProductId(),
                         PublishEnvironment.valueOf(row.getEnvironment()))
-                        .map(p -> p.getId() == row.getId()).orElse(false)
+                        .map(p -> p.getId().equals(row.getId())).orElse(false)
                 && canAct(row, user);
         return new PublicationView(row.getId(), row.getProductId(),
                 product == null ? null : product.sku(),

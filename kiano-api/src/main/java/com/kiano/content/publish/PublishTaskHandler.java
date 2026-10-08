@@ -1,22 +1,24 @@
 package com.kiano.content.publish;
 
-import com.kiano.commerce.ProductView;
 import com.kiano.commerce.CommerceException;
 import com.kiano.commerce.CommercePublisher;
+import com.kiano.commerce.CommercePublisherFactory;
+import com.kiano.commerce.ProductCatalog;
 import com.kiano.commerce.ProductContentUpdate;
+import com.kiano.commerce.ProductView;
 import com.kiano.commerce.PublishEnvironment;
 import com.kiano.commerce.WooMedia;
 import com.kiano.commerce.WooProductSnapshot;
-import com.kiano.commerce.CommercePublisherFactory;
 import com.kiano.content.asset.AssetEntity;
 import com.kiano.content.asset.AssetMapper;
 import com.kiano.content.asset.AssetStatus;
 import com.kiano.content.asset.ReviewService;
 import com.kiano.content.asset.ReviewService.ReviewItem;
-import com.kiano.commerce.ProductCatalog;
 import com.kiano.platform.audit.ActorType;
 import com.kiano.platform.audit.AuditEntry;
 import com.kiano.platform.audit.AuditLog;
+import com.kiano.platform.auth.CurrentUser;
+import com.kiano.platform.auth.Role;
 import com.kiano.platform.queue.NonRetryableTaskException;
 import com.kiano.platform.queue.TaskContext;
 import com.kiano.platform.queue.TaskHandler;
@@ -24,16 +26,16 @@ import com.kiano.platform.storage.ObjectStorage;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.LinkedHashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -42,9 +44,11 @@ import tools.jackson.databind.ObjectMapper;
  * snapshots it, uploads the gallery media in order (persisting each uploaded
  * id immediately), writes name/descriptions/images/Rank Math meta, then
  * marks the publication APPLIED - and for PRODUCTION publishes the assets
- * and archives the superseded versions. Any failure triggers restore of the
- * before snapshot and deletion of the uploaded media; if even the restore
- * fails the publication is flagged needsAttention.
+ * and archives the superseded versions. What gets written is exactly the
+ * asset set recorded on the publication (the set staging validated), never a
+ * fresh query. Any failure triggers restore of the before snapshot and
+ * deletion of the uploaded media; if even the restore fails the publication
+ * is flagged needsAttention.
  */
 @Component
 public class PublishTaskHandler implements TaskHandler {
@@ -60,11 +64,12 @@ public class PublishTaskHandler implements TaskHandler {
     private final CommercePublisherFactory publisherFactory;
     private final AuditLog auditLog;
     private final ObjectMapper objectMapper;
+    private final TransactionTemplate transactionTemplate;
 
     public PublishTaskHandler(PublicationMapper publicationMapper, AssetMapper assetMapper,
             ObjectStorage storage, ReviewService reviewService, ProductCatalog productCatalog,
             CommercePublisherFactory publisherFactory, AuditLog auditLog,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper, TransactionTemplate transactionTemplate) {
         this.publicationMapper = publicationMapper;
         this.assetMapper = assetMapper;
         this.storage = storage;
@@ -73,6 +78,7 @@ public class PublishTaskHandler implements TaskHandler {
         this.publisherFactory = publisherFactory;
         this.auditLog = auditLog;
         this.objectMapper = objectMapper;
+        this.transactionTemplate = transactionTemplate;
     }
 
     @Override
@@ -110,50 +116,50 @@ public class PublishTaskHandler implements TaskHandler {
         WooProductSnapshot before = bySku.get();
         publication.setBeforeJson(objectMapper.writeValueAsString(before));
         update(publication);
-        List<AssetEntity> publicationAssets = new ArrayList<>();
         try {
-            List<ReviewItem> items = filesFor(productId, publication, tenantId);
+            List<ReviewItem> recorded = recordedItems(tenantId, productId, publication);
+            List<ReviewItem> gallery = GallerySelector.select(recorded.stream()
+                    .filter(item -> "IMAGE".equals(item.kind())).toList());
+            List<ReviewItem> texts = recorded.stream()
+                    .filter(item -> "TEXT".equals(item.kind())).toList();
             List<Long> mediaIds = new ArrayList<>();
-            for (ReviewItem item : items) {
+            for (ReviewItem item : gallery) {
                 AssetEntity asset = assetMapper.selectById(item.assetId());
-                publicationAssets.add(asset);
-                if ("IMAGE".equals(asset.getKind())) {
-                    byte[] jpeg = storage.download(asset.getObjectKey());
-                    WooMedia media = publisher.uploadMedia(asset.getFileName(), jpeg,
-                            "image/jpeg", AltTextBuilder.build(product.name(), item));
-                    mediaIds.add(media.id());
-                    appendUploadedMedia(publication, media.id());
-                }
+                byte[] jpeg = storage.download(asset.getObjectKey());
+                WooMedia media = publisher.uploadMedia(asset.getFileName(), jpeg, "image/jpeg",
+                        AltTextBuilder.build(product.name(), item));
+                mediaIds.add(media.id());
+                appendUploadedMedia(publication, media.id());
             }
-            List<ReviewItem> texts = textAssets(productId, tenantId);
-            String name = textOf(texts, "COPY_TITLE");
-            String description = textOf(texts, "COPY_LONG");
-            String shortDescription = textOf(texts, "COPY_SHORT");
-            ReviewItem seo = texts.stream()
-                    .filter(item -> "COPY_SEO".equals(item.specCode())).findFirst().orElse(null);
-            ProductContentUpdate update = new ProductContentUpdate(name, description,
-                    shortDescription, mediaIds,
-                    seoTitle(seo), seoDescription(seo));
+            ReviewItem seo = textItem(texts, "COPY_SEO");
+            ProductContentUpdate update = new ProductContentUpdate(textOf(texts, "COPY_TITLE"),
+                    textOf(texts, "COPY_LONG"), textOf(texts, "COPY_SHORT"), mediaIds,
+                    seoField(seo, "title"), seoField(seo, "description"));
             WooProductSnapshot after = publisher.updateContent(before.id(), update);
-            if (!sameImageIds(before, after, update.imageIdsInOrder())) {
+            if (!sameImageIds(after, update.imageIdsInOrder())) {
                 throw new CommerceException("WOO_IMAGE_ORDER_CHANGED",
                         "Woo did not apply the image set in order", false);
             }
-            publication.setAfterJson(objectMapper.writeValueAsString(after));
-            publication.setExternalRef(String.valueOf(before.id()));
-            publication.setStatus("APPLIED");
-            publication.setPublishedAt(OffsetDateTime.now(ZoneOffset.UTC));
-            if (environment == PublishEnvironment.PRODUCTION) {
-                publishAssets(publication, publicationAssets);
-            }
-            update(publication);
-            auditLog.record(new AuditEntry(tenantId, ActorType.SYSTEM, "SYSTEM",
-                    environment == PublishEnvironment.PRODUCTION ? "PUBLISHED" : "STAGING_APPLIED",
-                    "publication", String.valueOf(publication.getId()),
-                    Map.of("environment", environment.name()),
-                    Map.of("productId", productId, "assetIds", publicationAssets.size(),
-                            "mediaIds", mediaIds.size()),
-                    null, "PUBLISH"));
+            // Asset statuses, the publication row and the audit entry commit
+            // together; any failure here rolls them back and restores Woo below.
+            transactionTemplate.executeWithoutResult(tx -> {
+                publication.setAfterJson(objectMapper.writeValueAsString(after));
+                publication.setExternalRef(String.valueOf(before.id()));
+                publication.setStatus("APPLIED");
+                publication.setPublishedAt(OffsetDateTime.now(ZoneOffset.UTC));
+                if (environment == PublishEnvironment.PRODUCTION) {
+                    publishAssets(publication, recorded);
+                }
+                update(publication);
+                auditLog.record(new AuditEntry(tenantId, ActorType.SYSTEM, "SYSTEM",
+                        environment == PublishEnvironment.PRODUCTION ? "PUBLISHED"
+                                : "STAGING_APPLIED",
+                        "publication", String.valueOf(publication.getId()),
+                        Map.of("environment", environment.name()),
+                        Map.of("productId", productId, "assetIds", recorded.size(),
+                                "mediaIds", mediaIds.size()),
+                        null, "PUBLISH"));
+            });
             return Map.of("publicationId", publicationId, "status", "APPLIED",
                     "mediaUploaded", mediaIds.size());
         } catch (RuntimeException ex) {
@@ -162,71 +168,49 @@ public class PublishTaskHandler implements TaskHandler {
         }
     }
 
-    /** The ordered gallery files for this publication (from its asset_ids). */
-    private List<ReviewItem> filesFor(long productId, PublicationEntity publication,
-            long tenantId) {
-        List<ReviewItem> approved = reviewService.list(new com.kiano.platform.auth.CurrentUser(0,
-                tenantId, com.kiano.platform.auth.Role.OWNER, "system"), productId, "APPROVED",
-                null);
-        List<Long> wanted = readIdList(publication.getAssetIds());
-        List<ReviewItem> gallery = GallerySelector.select(approved);
-        List<ReviewItem> ordered = new ArrayList<>();
-        for (ReviewItem item : gallery) {
-            if (wanted.contains(item.assetId())) {
-                ordered.add(item);
-            }
-        }
-        return ordered;
+    /** Exactly the assets recorded on the publication, whatever their current status. */
+    private List<ReviewItem> recordedItems(long tenantId, long productId,
+            PublicationEntity publication) {
+        Set<Long> wanted = new HashSet<>(readIdList(publication.getAssetIds()));
+        CurrentUser system = new CurrentUser(0, tenantId, Role.OWNER, "system");
+        return reviewService.list(system, productId, null, null).stream()
+                .filter(item -> wanted.contains(item.assetId()))
+                .toList();
     }
 
-    private List<ReviewItem> textAssets(long productId, long tenantId) {
-        return reviewService.list(new com.kiano.platform.auth.CurrentUser(0, tenantId,
-                com.kiano.platform.auth.Role.OWNER, "system"), productId, "APPROVED", "TEXT");
+    private static @Nullable ReviewItem textItem(List<ReviewItem> texts, String spec) {
+        return texts.stream().filter(item -> spec.equals(item.specCode())).findFirst()
+                .orElse(null);
     }
 
     private static String textOf(List<ReviewItem> texts, String spec) {
-        return texts.stream().filter(item -> spec.equals(item.specCode()))
-                .map(ReviewItem::textBody).filter(Objects::nonNull).findFirst().orElse("");
+        ReviewItem item = textItem(texts, spec);
+        return item == null || item.textBody() == null ? "" : item.textBody();
     }
 
-    private static @org.jspecify.annotations.Nullable String seoTitle(ReviewItem seo) {
-        return seo == null ? null : seoTitle(seo.textBody());
-    }
-
-    private static @org.jspecify.annotations.Nullable String seoDescription(ReviewItem seo) {
-        return seo == null ? null : seoDescription(seo.textBody());
-    }
-
-    private static String seoTitle(String seoJson) {
+    /** title/description from the COPY_SEO JSON; null (meta untouched) when absent. */
+    private @Nullable String seoField(@Nullable ReviewItem seo, String field) {
+        if (seo == null || seo.textBody() == null) {
+            return null;
+        }
         try {
-            JsonNode node = new ObjectMapper().readTree(seoJson);
-            return node.path("title").asText(null);
-        } catch (Exception ex) {
+            return objectMapper.readTree(seo.textBody()).path(field).asText(null);
+        } catch (RuntimeException ex) {
             return null;
         }
     }
 
-    private static String seoDescription(String seoJson) {
-        try {
-            JsonNode node = new ObjectMapper().readTree(seoJson);
-            return node.path("description").asText(null);
-        } catch (Exception ex) {
-            return null;
-        }
-    }
-
-    static boolean sameImageIds(WooProductSnapshot before, WooProductSnapshot after,
-            List<Long> expected) {
-        List<Long> actual = after.images().stream().map(WooProductSnapshot.WooImageRef::id).toList();
+    static boolean sameImageIds(WooProductSnapshot after, List<Long> expected) {
+        List<Long> actual = after.images().stream().map(WooProductSnapshot.WooImageRef::id)
+                .toList();
         return actual.equals(expected);
     }
 
-    /** PRODUCTION only: mark published & archive superseded versions. */
-    @Transactional
-    protected void publishAssets(PublicationEntity publication,
-            List<AssetEntity> publicationAssets) {
+    /** PRODUCTION only (inside the APPLIED transaction): publish every recorded asset. */
+    private void publishAssets(PublicationEntity publication, List<ReviewItem> recorded) {
         List<Long> archived = new ArrayList<>();
-        for (AssetEntity asset : publicationAssets) {
+        for (ReviewItem item : recorded) {
+            AssetEntity asset = assetMapper.selectById(item.assetId());
             List<AssetEntity> superseded = assetMapper.selectList(
                     new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<AssetEntity>()
                             .eq(AssetEntity::getTenantId, asset.getTenantId())
@@ -234,8 +218,7 @@ public class PublishTaskHandler implements TaskHandler {
                             .eq(AssetEntity::getSpecCode, asset.getSpecCode())
                             .eq(AssetEntity::getVariant, asset.getVariant())
                             .eq(AssetEntity::getStatus, AssetStatus.PUBLISHED.name())
-                            .ne(AssetEntity::getId, asset.getId())
-                            .ne(AssetEntity::getVersion, asset.getVersion()));
+                            .ne(AssetEntity::getId, asset.getId()));
             for (AssetEntity old : superseded) {
                 old.setStatus(AssetStatus.ARCHIVED.name());
                 assetMapper.updateById(old);
@@ -246,9 +229,7 @@ public class PublishTaskHandler implements TaskHandler {
                 assetMapper.updateById(asset);
             }
         }
-        if (!archived.isEmpty()) {
-            publication.setArchivedAssetIds(objectMapper.writeValueAsString(archived));
-        }
+        publication.setArchivedAssetIds(objectMapper.writeValueAsString(archived));
     }
 
     // ---- failure restore ----
@@ -260,12 +241,7 @@ public class PublishTaskHandler implements TaskHandler {
             if (beforeJson != null) {
                 WooProductSnapshot before = objectMapper.readValue(beforeJson,
                         WooProductSnapshot.class);
-                ProductContentUpdate restore = new ProductContentUpdate(before.name(),
-                        before.description(), before.shortDescription(),
-                        before.images().stream().map(WooProductSnapshot.WooImageRef::id).toList(),
-                        before.rankMath() == null ? null : before.rankMath().title(),
-                        before.rankMath() == null ? null : before.rankMath().description());
-                publisher.updateContent(before.id(), restore);
+                publisher.updateContent(before.id(), ProductContentUpdate.restoring(before));
             }
         } catch (RuntimeException restoreFailure) {
             publication.setNeedsAttention(true);
@@ -279,11 +255,10 @@ public class PublishTaskHandler implements TaskHandler {
                 log.warn("Failed to delete uploaded media {} during restore", mediaId, ex);
             }
         }
-        if (!Boolean.TRUE.equals(publication.getNeedsAttention())) {
-            publication.setStatus("FAILED");
-        } else {
-            publication.setStatus("FAILED");
-        }
+        // The APPLIED transaction may have rolled back after mutating this entity.
+        publication.setStatus("FAILED");
+        publication.setArchivedAssetIds("[]");
+        publication.setPublishedAt(null);
         publication.setError(publication.getError() == null ? String.valueOf(cause.getMessage())
                 : publication.getError() + " | " + cause.getMessage());
         update(publication);
@@ -305,7 +280,7 @@ public class PublishTaskHandler implements TaskHandler {
     private List<Long> readIdList(String json) {
         List<Long> ids = new ArrayList<>();
         if (json != null && !json.isBlank()) {
-            objectMapper.readTree(json).forEach(node -> ids.add(node.asLong()));
+            objectMapper.readTree(json).forEach((JsonNode node) -> ids.add(node.asLong()));
         }
         return ids;
     }
