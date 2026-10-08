@@ -50,7 +50,20 @@ public class ConnectionTester {
     }
 
     public TestResult test(CurrentUser user, LlmPurpose purpose) {
-        ResolvedRoute route = store.resolve(user.tenantId(), purpose);
+        long started = System.nanoTime();
+        ResolvedRoute route = null;
+        try {
+            route = store.resolve(user.tenantId(), purpose);
+            return run(user, purpose, route);
+        } catch (RuntimeException ex) {
+            // e.g. a key that no longer decrypts, or an unexpected HTTP-layer error:
+            // still a test result, never a 500, and never the key.
+            return new TestResult(false, null, latencyMs(started), null, "LLM_TEST_FAILED",
+                    ErrorRedaction.clean(ex.getMessage(), route == null ? null : route.apiKey()));
+        }
+    }
+
+    private TestResult run(CurrentUser user, LlmPurpose purpose, ResolvedRoute route) {
         boolean vision = purpose == LlmPurpose.FACT_DRAFT;
         List<LlmImage> images = vision
                 ? List.of(new LlmImage(VISION_PROBE, "vision probe (capital K)"))
@@ -67,9 +80,11 @@ public class ConnectionTester {
                         null);
             }
             String answer = result.output().answer();
-            boolean containsK = answer != null
-                    && answer.replaceAll("\\s", "").toUpperCase().contains("K");
-            if (containsK) {
+            // The answer must be exactly the letter K (quotes/punctuation/spaces
+            // aside); "OK" from a model that ignored the image must not pass.
+            boolean answeredK = answer != null
+                    && answer.replaceAll("[^A-Za-z]", "").equalsIgnoreCase("K");
+            if (answeredK) {
                 return new TestResult(true, result.model(), latencyMs, result.costUsd(), null,
                         null);
             }
@@ -78,7 +93,7 @@ public class ConnectionTester {
                             + "\" instead of the letter K; it cannot read images");
         } catch (LlmException ex) {
             return new TestResult(false, null, latencyMs(started), null, ex.code(),
-                    ErrorRedaction.clean(ex.getMessage()));
+                    ErrorRedaction.clean(ex.getMessage(), route.apiKey()));
         }
     }
 

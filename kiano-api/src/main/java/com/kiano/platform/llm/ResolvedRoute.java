@@ -13,6 +13,16 @@ public record ResolvedRoute(LlmPurpose purpose, @Nullable Long providerId, Provi
         String providerName, @Nullable String baseUrl, String apiKey, String model,
         boolean supportsImages, Pricing pricing, Instant updatedAt, boolean usingDefault) {
 
+    /** Never prints the key: logs, exception messages and test reports stay key-free. */
+    @Override
+    public String toString() {
+        return "ResolvedRoute[purpose=" + purpose + ", providerId=" + providerId + ", kind=" + kind
+                + ", providerName=" + providerName + ", baseUrl=" + baseUrl
+                + ", apiKey=[REDACTED], model=" + model + ", supportsImages=" + supportsImages
+                + ", pricing=" + pricing + ", updatedAt=" + updatedAt
+                + ", usingDefault=" + usingDefault + "]";
+    }
+
     /** llm_call.provider column value; ANTHROPIC or OPENAI_COMPATIBLE:{name}. */
     public String providerLabel() {
         return kind == ProviderKind.ANTHROPIC ? "ANTHROPIC"

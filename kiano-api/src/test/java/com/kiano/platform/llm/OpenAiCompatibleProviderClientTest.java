@@ -144,9 +144,52 @@ class OpenAiCompatibleProviderClientTest {
         List<JsonNode> corrections = sent.stream().map(WireMockRequest::body)
                 .filter(body -> hasCorrectionMessage(body)).toList();
         assertThat(corrections).hasSize(1);
-        String correction = corrections.get(0).path("messages").get(2).path("content").asText();
+        String correction = corrections.get(0).path("messages").get(3).path("content").asText();
         assertThat(correction).startsWith("Your previous reply was not valid:");
         assertThat(correction).endsWith("Reply again with only the JSON object.");
+    }
+
+    @Test
+    void retry_carriesPreviousReplyAsAssistantTurn_betweenUserTurns() throws Exception {
+        // Consecutive user messages are rejected by some OpenAI-compatible APIs,
+        // and the model needs to see the reply it is being asked to fix.
+        scenario("invalid-then-ok", "invalid-then-ok/invalid.json", "after-invalid", "ok.json");
+        ResolvedRoute route = route(LlmPurpose.COPY, true, "sk-test-key-123");
+
+        client.complete(request(LlmPurpose.COPY, Ping.class), route);
+
+        JsonNode retry = retryRequest();
+        assertThat(retry.path("messages")).extracting(node -> node.path("role").asText())
+                .containsExactly("system", "user", "assistant", "user");
+        String firstReply = MAPPER.readTree(fixture("invalid-then-ok/invalid.json"))
+                .path("choices").path(0).path("message").path("content").asText();
+        assertThat(retry.path("messages").get(2).path("content").asText()).isEqualTo(firstReply);
+    }
+
+    @Test
+    void retryAfterEmptyReply_usesPlaceholderAssistantTurn() throws Exception {
+        scenario("empty-then-ok-2", "empty.json", "after-empty", "ok.json");
+
+        client.complete(request(LlmPurpose.COPY, Ping.class),
+                route(LlmPurpose.COPY, true, "sk-test-key-123"));
+
+        JsonNode assistant = retryRequest().path("messages").get(2);
+        assertThat(assistant.path("role").asText()).isEqualTo("assistant");
+        assertThat(assistant.path("content").asText()).isEqualTo("(empty reply)");
+    }
+
+    @Test
+    void upstreamErrorEchoingAKeyWithoutSkPrefix_isRedacted() {
+        String key = "3f9a1234abcd5678ef00";
+        stubBody(401, "{\"error\":{\"message\":\"Invalid API key: " + key + "\"}}");
+
+        assertThatThrownBy(() -> client.complete(request(LlmPurpose.COPY, Ping.class),
+                route(LlmPurpose.COPY, true, key)))
+                .isInstanceOfSatisfying(LlmException.class,
+                        ex -> assertThat(ex.getMessage()).doesNotContain(key));
+        ArgumentCaptor<LlmCallRow> row = ArgumentCaptor.forClass(LlmCallRow.class);
+        verify(recorder).record(row.capture());
+        assertThat(row.getValue().error()).doesNotContain(key);
     }
 
     @Test
@@ -357,6 +400,13 @@ class OpenAiCompatibleProviderClientTest {
                 && messages.get(messages.size() - 1).path("role").asText().equals("user")
                 && messages.get(messages.size() - 1).path("content").asText()
                         .startsWith("Your previous reply was not valid:");
+    }
+
+    /** The validation retry: the request carrying the assistant + correction turns. */
+    private JsonNode retryRequest() {
+        return requests().stream().map(WireMockRequest::body)
+                .filter(body -> body.path("messages").size() == 4)
+                .findFirst().orElseThrow(() -> new AssertionError("no retry request was sent"));
     }
 
     private List<WireMockRequest> requests() {

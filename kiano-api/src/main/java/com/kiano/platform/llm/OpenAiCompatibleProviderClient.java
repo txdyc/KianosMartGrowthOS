@@ -74,13 +74,15 @@ public class OpenAiCompatibleProviderClient implements ProviderClient {
     @Override
     public <T> LlmResult<T> complete(LlmRequest<T> request, ResolvedRoute route)
             throws LlmException {
+        Correction correction = null;
         String lastInvalid = null;
         for (int attempt = 0; attempt < MAX_VALIDATION_ATTEMPTS; attempt++) {
-            Outcome<T> outcome = attempt(request, route, lastInvalid);
+            Outcome<T> outcome = attempt(request, route, correction);
             if (outcome.result() != null) {
                 return outcome.result();
             }
             lastInvalid = outcome.invalidReason();
+            correction = new Correction(outcome.previousReply(), lastInvalid);
         }
         throw new LlmException("LLM_INVALID_OUTPUT",
                 "Provider returned invalid output twice"
@@ -89,7 +91,7 @@ public class OpenAiCompatibleProviderClient implements ProviderClient {
     }
 
     private <T> Outcome<T> attempt(LlmRequest<T> request, ResolvedRoute route,
-            @Nullable String correction) throws LlmException {
+            @Nullable Correction correction) throws LlmException {
         Response response = send(request, route, correction);
         if ("length".equals(response.finishReason())) {
             recorder.record(row(request, route, response, "TRUNCATED", "length", null));
@@ -125,7 +127,7 @@ public class OpenAiCompatibleProviderClient implements ProviderClient {
         BigDecimal cost = response.cost(route);
         if (invalid != null) {
             recorder.record(errorRow(request, route, response, cost, invalid));
-            return Outcome.rejected(invalid);
+            return Outcome.rejected(invalid, response.content());
         }
         long callId = recorder.record(new LlmCallRecorder.LlmCallRow(request.tenantId(),
                 request.purpose(), model, "OK", response.input(), response.output(),
@@ -137,7 +139,7 @@ public class OpenAiCompatibleProviderClient implements ProviderClient {
 
     /** One HTTP call with internal backoff retries for transient failures. */
     private Response send(LlmRequest<?> request, ResolvedRoute route,
-            @Nullable String correction) throws LlmException {
+            @Nullable Correction correction) throws LlmException {
         long started = System.nanoTime();
         String body = buildBody(request, route, correction);
         for (int attempt = 0; ; attempt++) {
@@ -152,7 +154,7 @@ public class OpenAiCompatibleProviderClient implements ProviderClient {
                 return parseResponse(raw, latencyMs(started));
             } catch (RestClientResponseException ex) {
                 int status = ex.getStatusCode().value();
-                String detail = ErrorRedaction.clean(errorBody(ex));
+                String detail = ErrorRedaction.clean(errorBody(ex), route.apiKey());
                 if (status == 401 || status == 403) {
                     recorder.record(errorRow(request, route, latencyMs(started),
                             "LLM_CONFIG: " + detail));
@@ -177,7 +179,7 @@ public class OpenAiCompatibleProviderClient implements ProviderClient {
                         "LLM_RETRY: HTTP " + status + ": " + detail));
                 backoff(attempt);
             } catch (ResourceAccessException ex) {
-                String detail = ErrorRedaction.clean(ex.getMessage());
+                String detail = ErrorRedaction.clean(ex.getMessage(), route.apiKey());
                 if (attempt >= MAX_HTTP_RETRIES) {
                     recorder.record(errorRow(request, route, latencyMs(started),
                             "LLM_UNAVAILABLE: " + detail));
@@ -215,7 +217,7 @@ public class OpenAiCompatibleProviderClient implements ProviderClient {
     }
 
     private String buildBody(LlmRequest<?> request, ResolvedRoute route,
-            @Nullable String correction) throws LlmException {
+            @Nullable Correction correction) throws LlmException {
         ObjectNode root = mapper.createObjectNode()
                 .put("model", route.model())
                 .put("max_tokens", request.maxTokens())
@@ -236,8 +238,12 @@ public class OpenAiCompatibleProviderClient implements ProviderClient {
         }
         content.addObject().put("type", "text").put("text", request.userText());
         if (correction != null) {
+            // Show the model its own reply, then ask for the fix: alternating
+            // roles (no two user turns in a row), which strict APIs require.
+            messages.addObject().put("role", "assistant")
+                    .put("content", correction.assistantContent());
             messages.addObject().put("role", "user")
-                    .put("content", "Your previous reply was not valid: " + correction
+                    .put("content", "Your previous reply was not valid: " + correction.reason()
                             + ". Reply again with only the JSON object.");
         }
         try {
@@ -310,15 +316,31 @@ public class OpenAiCompatibleProviderClient implements ProviderClient {
         return (int) ((System.nanoTime() - startedNanos) / 1_000_000L);
     }
 
-    /** Result of one validation attempt. */
-    private record Outcome<T>(@Nullable LlmResult<T> result, @Nullable String invalidReason) {
+    /** Result of one validation attempt; a rejection keeps the reply for the retry. */
+    private record Outcome<T>(@Nullable LlmResult<T> result, @Nullable String invalidReason,
+            @Nullable String previousReply) {
 
         static <T> Outcome<T> parsed(LlmResult<T> result) {
-            return new Outcome<>(result, null);
+            return new Outcome<>(result, null, null);
         }
 
-        static <T> Outcome<T> rejected(String reason) {
-            return new Outcome<>(null, reason);
+        static <T> Outcome<T> rejected(String reason, @Nullable String reply) {
+            return new Outcome<>(null, reason, reply);
+        }
+    }
+
+    /** What the retry tells the model: its own reply and why it was rejected. */
+    private record Correction(@Nullable String previousReply, String reason) {
+
+        private static final int MAX_ECHO = 4000;
+
+        /** Some APIs reject an empty assistant turn, so an empty reply gets a placeholder. */
+        String assistantContent() {
+            if (previousReply == null || previousReply.isBlank()) {
+                return "(empty reply)";
+            }
+            return previousReply.length() > MAX_ECHO ? previousReply.substring(0, MAX_ECHO)
+                    : previousReply;
         }
     }
 

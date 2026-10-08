@@ -249,6 +249,33 @@ class AnthropicProviderClientTest {
                 .containsExactlyInAnyOrder("key-A", "key-B");
     }
 
+    @Test
+    void keyRotationForTheSameProvider_replacesTheCachedClient() throws Exception {
+        stubResponse(200, "structured-ok.json");
+
+        client.complete(request(LlmRequest.Effort.HIGH, 16000), route(1L, "key-old"));
+        client.complete(request(LlmRequest.Effort.HIGH, 16000), route(1L, "key-new"));
+        client.complete(request(LlmRequest.Effort.HIGH, 16000), route(1L, "key-new"));
+
+        // One live client per provider: the superseded key's client is dropped.
+        assertThat(client.cachedClientCount()).isEqualTo(1);
+        // getAllServeEvents() is newest first; reverse to call order.
+        List<WireMockRequest> inCallOrder = new java.util.ArrayList<>(requests());
+        java.util.Collections.reverse(inCallOrder);
+        assertThat(inCallOrder).extracting(WireMockRequest::apiKeyHeader)
+                .containsExactly("key-old", "key-new", "key-new");
+    }
+
+    @Test
+    void differentProviders_keepTheirOwnClients() throws Exception {
+        stubResponse(200, "structured-ok.json");
+
+        client.complete(request(LlmRequest.Effort.HIGH, 16000), route(1L, "key-A"));
+        client.complete(request(LlmRequest.Effort.HIGH, 16000), route(2L, "key-B"));
+
+        assertThat(client.cachedClientCount()).isEqualTo(2);
+    }
+
     // ---- helpers ----
 
     private static LlmRequest<Probe> request(LlmRequest.Effort effort, long maxTokens) {
@@ -262,7 +289,11 @@ class AnthropicProviderClientTest {
     }
 
     private static ResolvedRoute route(String apiKey) {
-        return new ResolvedRoute(LlmPurpose.COPY, 1L, ProviderKind.ANTHROPIC, "env-default",
+        return route(1L, apiKey);
+    }
+
+    private static ResolvedRoute route(Long providerId, String apiKey) {
+        return new ResolvedRoute(LlmPurpose.COPY, providerId, ProviderKind.ANTHROPIC, "env-default",
                 null, apiKey, "claude-opus-5-5", true,
                 new Pricing(new BigDecimal("4.00"), new BigDecimal("20.00"),
                         new BigDecimal("0.20")), Instant.EPOCH, true);

@@ -57,7 +57,7 @@ public class AnthropicProviderClient implements ProviderClient {
     private final LlmCallRecorder recorder;
     private final @Nullable String baseUrl;
 
-    private final ConcurrentHashMap<String, AnthropicClient> clients =
+    private final ConcurrentHashMap<String, CachedClient> clients =
             new ConcurrentHashMap<>();
 
     @Autowired
@@ -90,7 +90,7 @@ public class AnthropicProviderClient implements ProviderClient {
         }
         try {
             StructuredMessageCreateParams<T> params = params(request, route);
-            StructuredMessage<T> message = client(route.apiKey()).messages().create(params);
+            StructuredMessage<T> message = client(route).messages().create(params);
             int latencyMs = latencyMs(started);
             return finish(request, route, message, latencyMs);
         } catch (AnthropicServiceException ex) {
@@ -236,17 +236,33 @@ public class AnthropicProviderClient implements ProviderClient {
         return cost.divide(PER_MILLION, 6, RoundingMode.HALF_UP);
     }
 
-    /** One SDK client per API key, so a rotated key builds a fresh client. */
-    private AnthropicClient client(String apiKey) {
-        return clients.computeIfAbsent(sha256(apiKey), hash -> {
-            AnthropicOkHttpClient.Builder builder = AnthropicOkHttpClient.builder()
-                    .apiKey(apiKey)
-                    .maxRetries(SDK_MAX_RETRIES);
-            if (baseUrl != null) {
-                builder.baseUrl(baseUrl);
-            }
-            return builder.build();
-        });
+    /**
+     * One SDK client per provider, rebuilt when that provider's key changes; the
+     * superseded client is dropped rather than kept for the life of the app.
+     * It is not closed here because a request on another thread may still be
+     * using it - its idle OkHttp threads and connections expire on their own.
+     */
+    private AnthropicClient client(ResolvedRoute route) {
+        String hash = sha256(route.apiKey());
+        String providerKey = route.providerId() == null ? "env-default"
+                : String.valueOf(route.providerId());
+        return clients.compute(providerKey, (key, cached) ->
+                cached != null && cached.keyHash().equals(hash) ? cached
+                        : new CachedClient(hash, build(route.apiKey()))).client();
+    }
+
+    private AnthropicClient build(String apiKey) {
+        AnthropicOkHttpClient.Builder builder = AnthropicOkHttpClient.builder()
+                .apiKey(apiKey)
+                .maxRetries(SDK_MAX_RETRIES);
+        if (baseUrl != null) {
+            builder.baseUrl(baseUrl);
+        }
+        return builder.build();
+    }
+
+    /** The live client of one provider and the hash of the key it was built with. */
+    private record CachedClient(String keyHash, AnthropicClient client) {
     }
 
     private static String sha256(String apiKey) {
@@ -263,9 +279,14 @@ public class AnthropicProviderClient implements ProviderClient {
         return (int) ((System.nanoTime() - startedNanos) / 1_000_000L);
     }
 
+    /** Live SDK clients (one per provider); visible for the rotation tests. */
+    int cachedClientCount() {
+        return clients.size();
+    }
+
     @PreDestroy
     public void close() {
-        clients.values().forEach(AnthropicClient::close);
+        clients.values().forEach(cached -> cached.client().close());
         clients.clear();
     }
 }

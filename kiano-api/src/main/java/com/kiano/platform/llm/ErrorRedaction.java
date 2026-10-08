@@ -19,6 +19,26 @@ public final class ErrorRedaction {
     private ErrorRedaction() {
     }
 
+    /**
+     * Removes the exact {@code secrets} (the key the caller just used) before the
+     * pattern scrub: providers may echo keys that have no recognisable prefix.
+     * Secrets shorter than 4 characters are ignored to avoid shredding text.
+     */
+    public static @Nullable String clean(@Nullable String raw, @Nullable String... secrets) {
+        if (raw == null) {
+            return null;
+        }
+        String scrubbed = raw;
+        if (secrets != null) {
+            for (String secret : secrets) {
+                if (secret != null && secret.strip().length() >= 4) {
+                    scrubbed = scrubbed.replace(secret.strip(), "[REDACTED]");
+                }
+            }
+        }
+        return clean(scrubbed);
+    }
+
     /** Scrubbed copy of {@code raw}; null stays null. */
     public static @Nullable String clean(@Nullable String raw) {
         if (raw == null) {

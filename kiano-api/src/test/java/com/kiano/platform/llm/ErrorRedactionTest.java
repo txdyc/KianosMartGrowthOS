@@ -24,4 +24,19 @@ class ErrorRedactionTest {
         assertThat(cleaned.length()).isLessThanOrEqualTo(500 + "...".length());
         assertThat(cleaned).endsWith("...");
     }
+
+    @Test
+    void removesTheKnownSecret_evenWithoutARecognisablePrefix() {
+        String key = "3f9a1234abcd5678ef00";
+        String raw = "401 {\"error\":\"Invalid API key: " + key + "\"}";
+
+        String cleaned = ErrorRedaction.clean(raw, key);
+
+        assertThat(cleaned).doesNotContain(key).contains("[REDACTED]");
+    }
+
+    @Test
+    void blankOrNullSecrets_areIgnored() {
+        assertThat(ErrorRedaction.clean("plain message", "", null)).isEqualTo("plain message");
+    }
 }

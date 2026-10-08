@@ -71,6 +71,40 @@ class ConnectionTesterTest {
     }
 
     @Test
+    void factDraft_answerOK_isNotAVisionPass() throws Exception {
+        // A text-only model that ignores the image may just say "OK".
+        given(gateway.completeWith(any(), any()))
+                .willReturn(new LlmResult<>(new ConnectionTester.Ping("OK"), "deepseek-v4-pro",
+                        100, 20, null, 1L));
+
+        ConnectionTester.TestResult result = tester.test(OWNER, LlmPurpose.FACT_DRAFT);
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.code()).isEqualTo("LLM_VISION_CHECK_FAILED");
+    }
+
+    @Test
+    void factDraft_quotedOrPunctuatedK_passes() throws Exception {
+        given(gateway.completeWith(any(), any()))
+                .willReturn(new LlmResult<>(new ConnectionTester.Ping(" \"k.\" "), "deepseek-flash",
+                        100, 20, null, 1L));
+
+        assertThat(tester.test(OWNER, LlmPurpose.FACT_DRAFT).ok()).isTrue();
+    }
+
+    @Test
+    void unexpectedRuntimeError_returnsOkFalseInsteadOfThrowing() throws Exception {
+        given(gateway.completeWith(any(), any()))
+                .willThrow(new IllegalStateException("decrypt failed for Bearer sk-leaky-123456789"));
+
+        ConnectionTester.TestResult result = tester.test(OWNER, LlmPurpose.COPY);
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.code()).isEqualTo("LLM_TEST_FAILED");
+        assertThat(result.message()).doesNotContain("sk-leaky-123456789");
+    }
+
+    @Test
     void factDraft_wrongLetter_visionCheckFailed() throws Exception {
         given(gateway.completeWith(any(), any()))
                 .willReturn(new LlmResult<>(new ConnectionTester.Ping("B"), "deepseek-flash",
