@@ -1,0 +1,1 @@
+{"id":"chatcmpl-m","model":"deepseek-flash","choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"{\"title\":\"T\",\"shortBullets\":[\"a\"],\"whyBuy\":[\"b\"],\"faq\":[],\"seoTitle\":null,\"seoDescription\":\"D\",\"gshopTitle\":\"G\",\"waMessage\":\"w {{price}}\"}"}}],"usage":{"prompt_tokens":30,"completion_tokens":10,"prompt_cache_hit_tokens":0}}

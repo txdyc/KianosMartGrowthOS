@@ -97,16 +97,18 @@
     </dependency>
     <!-- JSON Schema generation (Draft 2020-12) for LLM structured-output records;
          JacksonModule maps @JsonPropertyDescription and the JSpecify @Nullable
-         driven required/optional split; works natively with Jackson 3. -->
+         driven required/optional split. 4.x is pinned: the anthropic SDK calls
+         vitctools' SchemaGenerator.generateSchema(Type, Type[]) at runtime, a
+         signature that 5.x removed. -->
     <dependency>
       <groupId>com.github.victools</groupId>
       <artifactId>jsonschema-generator</artifactId>
-      <version>5.0.0</version>
+      <version>4.38.0</version>
     </dependency>
     <dependency>
       <groupId>com.github.victools</groupId>
       <artifactId>jsonschema-module-jackson</artifactId>
-      <version>5.0.0</version>
+      <version>4.38.0</version>
     </dependency>
     <!-- Field descriptions on LLM structured-output records; the anthropic SDK
          reads them to describe JSON schema properties. 2.21+ also provides

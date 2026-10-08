@@ -1,0 +1,1 @@
+{"id":"chatcmpl-x","model":"deepseek-flash","choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"{\"answer\":\"pong\"}"}}],"usage":{"prompt_tokens":1000,"completion_tokens":500,"prompt_cache_hit_tokens":400}}
