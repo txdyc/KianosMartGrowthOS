@@ -63,6 +63,7 @@ class WorkflowControllerTest {
         jdbcTemplate.update("delete from comfy_workflow");
         jdbcTemplate.update("delete from audit_log where target_type = 'comfy_workflow'");
         tenantId = jdbcTemplate.queryForObject("select id from tenant where slug = 'kianosmart'", Long.class);
+        jdbcTemplate.update("delete from store_policy");
         jdbcTemplate.update("delete from app_user");
         jdbcTemplate.update(
                 "insert into app_user (tenant_id, email, name, password_hash, role) "

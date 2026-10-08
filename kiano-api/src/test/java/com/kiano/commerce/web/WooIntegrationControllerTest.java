@@ -86,6 +86,7 @@ class WooIntegrationControllerTest {
         jdbcTemplate.update("delete from generation_job");
         jdbcTemplate.update("delete from generation_run");
         jdbcTemplate.update("delete from comfy_workflow");
+        jdbcTemplate.update("delete from store_policy");
         jdbcTemplate.update("delete from app_user");
         insertUser(OWNER_EMAIL, OWNER_PASSWORD, "OWNER");
         insertUser(OPERATOR_EMAIL, OPERATOR_PASSWORD, "OPERATOR");
@@ -121,7 +122,7 @@ class WooIntegrationControllerTest {
 
     private void stubPingOk() {
         woo.stubFor(WireMock.get(urlPathEqualTo("/wp-json/wc/v3/products"))
-                .withQueryParam("per_page", equalTo("1"))
+                .withQueryParam("sku", equalTo(""))
                 .willReturn(okJson("[]")));
     }
 

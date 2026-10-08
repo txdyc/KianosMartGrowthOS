@@ -72,6 +72,7 @@ class ReshootControllerTest {
         jdbcTemplate.update("delete from product");
         jdbcTemplate.update("delete from category");
         jdbcTemplate.update("delete from store where platform = 'WOOCOMMERCE'");
+        jdbcTemplate.update("delete from store_policy");
         jdbcTemplate.update("delete from app_user");
         jdbcTemplate.update(
                 "insert into app_user (tenant_id, email, name, password_hash, role) values (?, ?, ?, ?, 'VIEWER')",

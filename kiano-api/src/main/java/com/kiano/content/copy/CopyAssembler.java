@@ -52,7 +52,7 @@ public class CopyAssembler {
         out.put("COPY_LONG", new TextAsset(longBody, with(base, Map.of("whyBuy",
                 draft.whyBuy() == null ? List.of() : draft.whyBuy(),
                 "faq", draft.faq() == null ? List.of() : draft.faq()))));
-        String seoJson = objectMapper.writeValueAsString(Map.of(
+        String seoJson = objectMapper.writeValueAsString(orderedJson(
                 "title", draft.seoTitle() == null ? "" : draft.seoTitle(),
                 "description", draft.seoDescription() == null ? "" : draft.seoDescription()));
         out.put("COPY_SEO", new TextAsset(seoJson, with(base, Map.of("seoTitle",
@@ -139,6 +139,14 @@ public class CopyAssembler {
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "TEMPLATE_NOT_FOUND",
                         "No approved template for " + code));
         return Mustache.compiler().escapeHTML(true).compile(body).execute(model);
+    }
+
+    private static Map<String, Object> orderedJson(Object... pairs) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (int i = 0; i + 1 < pairs.length; i += 2) {
+            out.put(String.valueOf(pairs[i]), pairs[i + 1]);
+        }
+        return out;
     }
 
     private static Map<String, Object> baseContent(CopyDraft draft, FactsJson facts,

@@ -7,10 +7,12 @@ import com.kiano.commerce.ProductContentUpdate;
 import com.kiano.commerce.ProductView;
 import com.kiano.commerce.PublishEnvironment;
 import com.kiano.commerce.WooProductSnapshot;
-import com.kiano.commerce.woo.CommercePublisherFactory;
+import com.kiano.commerce.CommercePublisherFactory;
 import com.kiano.content.asset.AssetStatus;
 import com.kiano.content.asset.ReviewService.ReviewItem;
 import com.kiano.content.asset.ReviewService;
+import com.kiano.content.facts.FactSheetService;
+import com.kiano.content.facts.FactSheetService.FactSheetView;
 import com.kiano.content.policy.PolicyService;
 import com.kiano.platform.audit.ActorType;
 import com.kiano.platform.audit.AuditEntry;
@@ -31,6 +33,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.LinkedHashSet;
 import org.jspecify.annotations.Nullable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
@@ -57,6 +60,7 @@ public class PublicationService {
     private final com.kiano.content.asset.AssetMapper assetMapper;
     private final ReviewService reviewService;
     private final PolicyService policyService;
+    private final FactSheetService factSheetService;
     private final ProductCatalog productCatalog;
     private final AppUserMapper appUserMapper;
     private final TaskQueue queue;
@@ -66,14 +70,15 @@ public class PublicationService {
 
     public PublicationService(PublicationMapper mapper,
             com.kiano.content.asset.AssetMapper assetMapper, ReviewService reviewService,
-            PolicyService policyService, ProductCatalog productCatalog,
-            AppUserMapper appUserMapper, TaskQueue queue,
+            PolicyService policyService, FactSheetService factSheetService,
+            ProductCatalog productCatalog, AppUserMapper appUserMapper, TaskQueue queue,
             CommercePublisherFactory publisherFactory, AuditLog auditLog,
             ObjectMapper objectMapper) {
         this.mapper = mapper;
         this.assetMapper = assetMapper;
         this.reviewService = reviewService;
         this.policyService = policyService;
+        this.factSheetService = factSheetService;
         this.productCatalog = productCatalog;
         this.appUserMapper = appUserMapper;
         this.queue = queue;
@@ -158,6 +163,78 @@ public class PublicationService {
             views.add(toView(user, row));
         }
         return views;
+    }
+
+    /**
+     * Products whose current production content is out of date (Task 12):
+     * an asset that was PUBLISHED now has a STALE version because the facts
+     * or the store policy changed after the last publish. Reasons are
+     * FACTS_CHANGED (a stale asset carries an older fact version than the
+     * currently locked sheet) and/or POLICY_CHANGED (a stale COPY_LONG was
+     * rendered against an older policy version).
+     */
+    public List<NeedsRepublishItem> needsRepublish(long tenantId) {
+        List<com.kiano.content.asset.AssetEntity> assets = new ArrayList<>(
+                assetMapper.selectList(Wrappers.<com.kiano.content.asset.AssetEntity>lambdaQuery()
+                        .eq(com.kiano.content.asset.AssetEntity::getTenantId, tenantId)
+                        .eq(com.kiano.content.asset.AssetEntity::getStatus, AssetStatus.STALE.name())));
+        if (assets.isEmpty()) {
+            return List.of();
+        }
+        LinkedHashMap<Long, NeedsRepublishItem> byProduct = new LinkedHashMap<>();
+        for (com.kiano.content.asset.AssetEntity asset : assets) {
+            NeedsRepublishItem item = byProduct.computeIfAbsent(asset.getProductId(),
+                    id -> {
+                        ProductView product = productCatalog.findById(tenantId, id).orElse(null);
+                        return new NeedsRepublishItem(id,
+                                product == null ? null : product.sku(),
+                                product == null ? null : product.name(),
+                                new LinkedHashSet<>());
+                    });
+            if ("COPY_LONG".equals(asset.getSpecCode())) {
+                Integer contentPolicy = readContentPolicyVersion(asset);
+                PolicyService.PolicyView current = policyService.current(tenantId).orElse(null);
+                if (current != null && contentPolicy != null && contentPolicy != current.version()) {
+                    item.reasons().add("POLICY_CHANGED");
+                }
+            }
+            FactSheetView locked = factSheetService.locked(tenantId, asset.getProductId())
+                    .orElse(null);
+            if (locked != null && asset.getFactVersion() != null
+                    && asset.getFactVersion() < locked.version()) {
+                item.reasons().add("FACTS_CHANGED");
+            }
+        }
+        return byProduct.values().stream()
+                .filter(item -> !item.reasons().isEmpty())
+                .map(item -> new NeedsRepublishItem(item.productId(), item.sku(),
+                        item.productName(), sortedReasons(item.reasons())))
+                .toList();
+    }
+
+    private static LinkedHashSet<String> sortedReasons(LinkedHashSet<String> reasons) {
+        LinkedHashSet<String> out = new LinkedHashSet<>();
+        for (String reason : List.of("FACTS_CHANGED", "POLICY_CHANGED")) {
+            if (reasons.contains(reason)) {
+                out.add(reason);
+            }
+        }
+        return out;
+    }
+
+    /** One product that was published but whose content is now out of date. */
+    public record NeedsRepublishItem(long productId, @Nullable String sku,
+            @Nullable String productName, LinkedHashSet<String> reasons) {
+    }
+
+    private @Nullable Integer readContentPolicyVersion(
+            com.kiano.content.asset.AssetEntity asset) {
+        if (asset.getContentJson() == null) {
+            return null;
+        }
+        JsonNode content = objectMapper.readTree(asset.getContentJson());
+        JsonNode version = content.path("policyVersion");
+        return version.isNull() || version.isMissingNode() ? null : version.asInt();
     }
 
     /**

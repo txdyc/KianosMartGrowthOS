@@ -14,7 +14,7 @@ import com.kiano.commerce.WooMedia;
 import com.kiano.commerce.WooProductSnapshot;
 import com.kiano.commerce.WooProductSnapshot.RankMath;
 import com.kiano.commerce.WooProductSnapshot.WooImageRef;
-import com.kiano.commerce.woo.CommercePublisherFactory;
+import com.kiano.commerce.CommercePublisherFactory;
 import com.kiano.content.asset.AssetEntity;
 import com.kiano.content.asset.AssetMapper;
 import com.kiano.content.asset.AssetStatus;

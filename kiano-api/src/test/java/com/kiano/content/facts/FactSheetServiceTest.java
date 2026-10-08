@@ -52,7 +52,10 @@ class FactSheetServiceTest {
     @BeforeEach
     void seed() {
         jdbcTemplate.update("delete from product_fact_sheet");
+        jdbcTemplate.update("delete from audit_log");
         jdbcTemplate.update("delete from llm_call");
+        jdbcTemplate.update("delete from platform_task where tenant_id = "
+                + "(select id from tenant where slug = 'kianosmart')");
         jdbcTemplate.update("delete from source_media");
         jdbcTemplate.update("delete from product_category");
         jdbcTemplate.update("delete from product");

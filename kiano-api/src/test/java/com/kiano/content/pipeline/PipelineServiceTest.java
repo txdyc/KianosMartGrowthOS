@@ -62,6 +62,7 @@ class PipelineServiceTest {
         jdbcTemplate.update("delete from product");
         jdbcTemplate.update("delete from category");
         jdbcTemplate.update("delete from store where platform = 'WOOCOMMERCE'");
+        jdbcTemplate.update("delete from store_policy");
         jdbcTemplate.update("delete from app_user");
         tenantId = jdbcTemplate.queryForObject("select id from tenant where slug = 'kianosmart'",
                 Long.class);

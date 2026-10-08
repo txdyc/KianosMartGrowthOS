@@ -45,6 +45,12 @@ public class PublicationController {
         return service.list(user, productId);
     }
 
+    @GetMapping("/publications/needs-republish")
+    @PreAuthorize("hasRole('VIEWER')")
+    public List<PublicationService.NeedsRepublishItem> needsRepublish(CurrentUser user) {
+        return service.needsRepublish(user.tenantId());
+    }
+
     @PostMapping("/publications/{id}/rollback")
     @PreAuthorize("hasRole('OPERATOR')")
     public PublicationView rollback(CurrentUser user, @PathVariable("id") long publicationId,

@@ -35,7 +35,7 @@ import tools.jackson.databind.json.JsonMapper;
  * media deletion. Write operations never retry 5xx inside the adapter - a
  * retried POST would duplicate media; the publish flow owns recovery.
  * Not a Spring bean: built per tenant/environment by
- * {@link CommercePublisherFactory}.
+ * {@link com.kiano.commerce.CommercePublisherFactory}.
  */
 public class WooPublisherAdapter implements CommercePublisher {
 

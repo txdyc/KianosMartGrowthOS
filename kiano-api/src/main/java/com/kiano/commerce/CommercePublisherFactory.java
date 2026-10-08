@@ -1,7 +1,7 @@
-package com.kiano.commerce.woo;
+package com.kiano.commerce;
 
-import com.kiano.commerce.CommercePublisher;
-import com.kiano.commerce.PublishEnvironment;
+import com.kiano.commerce.woo.WooCredentials;
+import com.kiano.commerce.woo.WooProperties;
 import com.kiano.platform.integration.IntegrationStore;
 import com.kiano.platform.integration.StoredIntegration;
 import com.kiano.platform.web.ApiException;
@@ -14,7 +14,8 @@ import org.springframework.stereotype.Component;
  * Builds a per-tenant {@link CommercePublisher} for an environment: STAGING
  * uses provider WOOCOMMERCE_STAGING (local Docker), PRODUCTION uses the
  * existing WOOCOMMERCE credentials. An unconfigured environment → 409
- * WOO_ENV_NOT_CONFIGURED.
+ * WOO_ENV_NOT_CONFIGURED. Lives in the commerce root package so other modules
+ * (e.g. content) may depend on it without importing the woo impl package.
  */
 @Component
 public class CommercePublisherFactory {
@@ -49,6 +50,6 @@ public class CommercePublisherFactory {
                     Map.of("environment", environment.name()));
         }
         WooCredentials credentials = store.credentials(integration.get(), WooCredentials.class);
-        return new WooPublisherAdapter(credentials, properties);
+        return new com.kiano.commerce.woo.WooPublisherAdapter(credentials, properties);
     }
 }

@@ -54,9 +54,13 @@ class FactSheetControllerTest {
     @BeforeEach
     void seed() {
         jdbcTemplate.update("delete from product_fact_sheet");
+        jdbcTemplate.update("delete from audit_log");
         jdbcTemplate.update("delete from llm_call");
         jdbcTemplate.update("delete from source_media");
         jdbcTemplate.update("delete from product_category");
+        jdbcTemplate.update("delete from generation_job");
+        jdbcTemplate.update("delete from generation_run");
+        jdbcTemplate.update("delete from store_policy");
         jdbcTemplate.update("delete from product");
         jdbcTemplate.update("delete from category");
         jdbcTemplate.update("delete from store where platform = 'WOOCOMMERCE'");

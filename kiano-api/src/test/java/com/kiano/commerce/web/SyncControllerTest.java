@@ -68,6 +68,7 @@ class SyncControllerTest {
         jdbcTemplate.update("delete from generation_job");
         jdbcTemplate.update("delete from generation_run");
         jdbcTemplate.update("delete from comfy_workflow");
+        jdbcTemplate.update("delete from store_policy");
         jdbcTemplate.update("delete from app_user");
         insertUser(OPERATOR_EMAIL, OPERATOR_PASSWORD, "OPERATOR");
         insertUser(VIEWER_EMAIL, VIEWER_PASSWORD, "VIEWER");

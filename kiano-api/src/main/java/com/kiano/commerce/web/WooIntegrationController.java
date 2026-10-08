@@ -2,7 +2,7 @@ package com.kiano.commerce.web;
 
 import com.kiano.commerce.CommerceException;
 import com.kiano.commerce.PublishEnvironment;
-import com.kiano.commerce.woo.CommercePublisherFactory;
+import com.kiano.commerce.CommercePublisherFactory;
 import com.kiano.commerce.woo.WooCredentials;
 import com.kiano.platform.audit.ActorType;
 import com.kiano.platform.audit.AuditEntry;
@@ -107,11 +107,18 @@ public class WooIntegrationController {
         try {
             commercePublisherFactory.forEnvironment(user.tenantId(), environment).findBySku("");
             return Map.of("ok", true);
-        } catch (ApiException | CommerceException ex) {
-            return Map.of("ok", false, "code",
-                    ex instanceof ApiException api ? api.getCode()
-                            : ((CommerceException) ex).code(),
+        } catch (ApiException ex) {
+            return Map.of("ok", false, "code", ex.getCode(),
                     "message", ex.getMessage() == null ? "" : ex.getMessage());
+        } catch (CommerceException ex) {
+            String message = ex.getMessage();
+            if ("WOO_AUTH_FAILED".equals(ex.code())) {
+                message = "WooCommerce rejected the credentials. Check the username and "
+                        + "Application Password; on an http:// site WordPress also needs "
+                        + "WP_ENVIRONMENT_TYPE=local.";
+            }
+            return Map.of("ok", false, "code", ex.code(),
+                    "message", message == null ? "" : message);
         }
     }
 
