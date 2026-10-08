@@ -44,8 +44,14 @@ public class CopyAssembler {
             String productName, @Nullable String policyHtml, @Nullable Integer policyVersion,
             int factVersion) {
         Map<String, TextAsset> out = new LinkedHashMap<>();
+        // Plain-text specs lose any markup the model produced (see PlainText).
+        String title = PlainText.strip(draft.title());
+        String seoTitle = PlainText.strip(draft.seoTitle());
+        String seoDescription = PlainText.strip(draft.seoDescription());
+        String gshopTitle = PlainText.strip(draft.gshopTitle());
+        String waMessage = PlainText.strip(draft.waMessage());
         Map<String, Object> base = baseContent(draft, facts, factVersion, policyVersion);
-        out.put("COPY_TITLE", new TextAsset(draft.title(), with(base, Map.of("title", draft.title()))));
+        out.put("COPY_TITLE", new TextAsset(title, with(base, Map.of("title", title))));
         out.put("COPY_SHORT", new TextAsset(renderShort(tenantId, draft), with(base, Map.of(
                 "shortBullets", draft.shortBullets() == null ? List.of() : draft.shortBullets()))));
         String longBody = renderLong(tenantId, draft, facts, policyHtml);
@@ -53,14 +59,14 @@ public class CopyAssembler {
                 draft.whyBuy() == null ? List.of() : draft.whyBuy(),
                 "faq", draft.faq() == null ? List.of() : draft.faq()))));
         String seoJson = objectMapper.writeValueAsString(orderedJson(
-                "title", draft.seoTitle() == null ? "" : draft.seoTitle(),
-                "description", draft.seoDescription() == null ? "" : draft.seoDescription()));
+                "title", seoTitle == null ? "" : seoTitle,
+                "description", seoDescription == null ? "" : seoDescription));
         out.put("COPY_SEO", new TextAsset(seoJson, with(base, Map.of("seoTitle",
-                draft.seoTitle(), "seoDescription", draft.seoDescription()))));
-        out.put("COPY_GSHOP", new TextAsset(draft.gshopTitle(), with(base, Map.of("gshopTitle",
-                draft.gshopTitle()))));
-        out.put("COPY_WA", new TextAsset(draft.waMessage(), with(base, Map.of("waMessage",
-                draft.waMessage()))));
+                seoTitle, "seoDescription", seoDescription))));
+        out.put("COPY_GSHOP", new TextAsset(gshopTitle, with(base, Map.of("gshopTitle",
+                gshopTitle))));
+        out.put("COPY_WA", new TextAsset(waMessage, with(base, Map.of("waMessage",
+                waMessage))));
         return out;
     }
 

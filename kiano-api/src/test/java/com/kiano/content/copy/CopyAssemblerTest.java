@@ -82,7 +82,7 @@ class CopyAssemblerTest {
     }
 
     @Test
-    void llmHtml_isEscapedOnlyInHtmlSpecs() {
+    void llmHtml_isEscapedInHtmlSpecs_andStrippedFromPlainTextSpecs() {
         CopyDraft evil = new CopyDraft("Morgan <b>Kettle</b> & Co",
                 List.of("<script>alert(1)</script> bullet"),
                 List.of("<script>alert(1)</script> paragraph"),
@@ -92,12 +92,15 @@ class CopyAssemblerTest {
         Map<String, TextAsset> specs = assembler.assemble(tenantId, evil, facts(),
                 "Morgan 1.7L Kettle", null, null, 1);
 
-        // Plain-text specs (Woo name / WA) carry the raw LLM text; HTML specs
-        // render through Mustache {{ }} which escapes.
-        assertThat(specs.get("COPY_TITLE").textBody())
-                .isEqualTo("Morgan <b>Kettle</b> & Co");
-        assertThat(specs.get("COPY_WA").textBody())
-                .isEqualTo("Hi {{price}} & <b>bold</b>");
+        // Plain-text specs are written verbatim to Woo (name, Rank Math) or sent
+        // as WhatsApp text, so markup is stripped (WordPress stores the title raw
+        // for Shop Managers and themes print it unescaped). HTML specs render
+        // through Mustache {{ }}, which escapes.
+        assertThat(specs.get("COPY_TITLE").textBody()).isEqualTo("Morgan Kettle & Co");
+        assertThat(specs.get("COPY_WA").textBody()).isEqualTo("Hi {{price}} & bold");
+        assertThat(specs.get("COPY_GSHOP").textBody()).isEqualTo("GShop title");
+        assertThat(specs.get("COPY_SEO").textBody()).contains("\"SEO title\"")
+                .doesNotContain("<i>");
         assertThat(specs.get("COPY_LONG").textBody())
                 .contains("&lt;script&gt;alert(1)&lt;/script&gt;")
                 .doesNotContain("<script");
@@ -107,6 +110,19 @@ class CopyAssemblerTest {
         assertThat(specs.get("COPY_SHORT").textBody())
                 .contains("&lt;script&gt;")
                 .doesNotContain("<script");
+    }
+
+    @Test
+    void plainTextSpecs_dropScriptAndHandlerMarkupEntirely() {
+        CopyDraft evil = new CopyDraft("<img src=x onerror=alert(1)>Morgan Kettle",
+                List.of("ok"), List.of("ok"), List.of(), "<script>x</script>SEO", "desc",
+                "GShop", "Hi {{price}}");
+        Map<String, TextAsset> specs = assembler.assemble(tenantId, evil, facts(),
+                "Morgan 1.7L Kettle", null, null, 1);
+
+        assertThat(specs.get("COPY_TITLE").textBody()).isEqualTo("Morgan Kettle");
+        assertThat(specs.get("COPY_SEO").textBody())
+                .isEqualTo("{\"title\":\"SEO\",\"description\":\"desc\"}");
     }
 
     @Test

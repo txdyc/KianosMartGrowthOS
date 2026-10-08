@@ -5,6 +5,7 @@ import com.kiano.commerce.ProductCatalog;
 import com.kiano.commerce.ProductView;
 import com.kiano.content.asset.AssetService.AssetView;
 import com.kiano.content.copy.CopyAssembler;
+import com.kiano.content.copy.PlainText;
 import com.kiano.content.copy.TextPrecheck;
 import com.kiano.content.facts.FactSheetService;
 import com.kiano.content.facts.FactSheetService.FactSheetView;
@@ -232,11 +233,15 @@ public class ReviewService {
             throw new ApiException(HttpStatus.CONFLICT, "ASSET_NOT_EDITABLE",
                     "Asset " + assetId + " is " + asset.getStatus() + ", not editable");
         }
-        if (List.of("COPY_LONG", "COPY_SHORT").contains(asset.getSpecCode())
-                && !Jsoup.isValid(textBody, HTML_SAFELIST)) {
+        boolean htmlSpec = List.of("COPY_LONG", "COPY_SHORT").contains(asset.getSpecCode());
+        if (htmlSpec && !Jsoup.isValid(textBody, HTML_SAFELIST)) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "TEXT_HTML_NOT_ALLOWED",
                     "Only p, ul, li, table, tr, th, td, h2, h3, strong, em and the policy "
                             + "block markup are allowed in " + asset.getSpecCode());
+        }
+        if (!htmlSpec && PlainText.hasMarkup(textBody)) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "TEXT_HTML_NOT_ALLOWED",
+                    asset.getSpecCode() + " is plain text; HTML tags are not allowed");
         }
         @SuppressWarnings("unchecked")
         Map<String, Object> contentJson = asset.getContentJson() == null

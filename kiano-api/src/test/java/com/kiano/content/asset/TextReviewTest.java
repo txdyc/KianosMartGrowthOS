@@ -156,6 +156,26 @@ class TextReviewTest {
     }
 
     @Test
+    void edit_plainTextSpec_withAnyMarkup_422() {
+        // COPY_TITLE becomes the Woo product name, which themes print unescaped.
+        long title = textAsset("COPY_TITLE", "IN_REVIEW", "Morgan Kettle", null, 1);
+        long seo = textAsset("COPY_SEO", "IN_REVIEW",
+                "{\"title\":\"t\",\"description\":\"d\"}", null, 1);
+
+        assertThatThrownBy(() -> reviewService.editText(user, title,
+                "Morgan <img src=x onerror=alert(1)> Kettle"))
+                .isInstanceOfSatisfying(ApiException.class,
+                        ex -> assertThat(ex.getCode()).isEqualTo("TEXT_HTML_NOT_ALLOWED"));
+        assertThatThrownBy(() -> reviewService.editText(user, seo,
+                "{\"title\":\"<b>t</b>\",\"description\":\"d\"}"))
+                .isInstanceOfSatisfying(ApiException.class,
+                        ex -> assertThat(ex.getCode()).isEqualTo("TEXT_HTML_NOT_ALLOWED"));
+        // Plain characters such as & and a lone < are fine.
+        assertThat(reviewService.editText(user, title, "Morgan Kettle & Base < 2kg").textBody())
+                .isEqualTo("Morgan Kettle & Base < 2kg");
+    }
+
+    @Test
     void edit_onApproved_409() {
         long id = textAsset("COPY_TITLE", "APPROVED", "Morgan Kettle", null, 1);
 
