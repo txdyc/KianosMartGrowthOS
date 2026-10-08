@@ -55,8 +55,63 @@ public class TemplateRenderer {
         }
     }
 
+    /** Bounding box of one {@code .ad-text} element, in CSS pixels. */
+    public record Rect(double top, double bottom, double left, double right) {
+    }
+
+    /**
+     * Bounding boxes of every {@code .ad-text} element after rendering, used to
+     * enforce the 9:16 safe area on ad statics.
+     */
+    public List<Rect> textBoxes(long tenantId, String code, Map<String, Object> model,
+            int width, int height) {
+        return rectsFor(tenantId, code, model, width, height, ".ad-text");
+    }
+
+    /** Bounding boxes of every element matching {@code selector}. */
+    public List<Rect> rectsFor(long tenantId, String code, Map<String, Object> model,
+            int width, int height, String selector) {
+        try (Page page = openPage(tenantId, code, model, width, height)) {
+            Object boxes = page.evaluate("""
+                    (selector) => Array.from(document.querySelectorAll(selector)).map(el => {
+                        const r = el.getBoundingClientRect();
+                        return { top: r.top, bottom: r.bottom, left: r.left, right: r.right };
+                    })""", selector);
+            return parseRects(boxes);
+        }
+    }
+
+    private static List<Rect> parseRects(Object boxes) {
+        if (!(boxes instanceof List<?> list)) {
+            return List.of();
+        }
+        List<Rect> rects = new ArrayList<>();
+        for (Object item : list) {
+            if (!(item instanceof Map<?, ?> map)) {
+                continue;
+            }
+            try {
+                rects.add(new Rect(num(map.get("top")), num(map.get("bottom")),
+                        num(map.get("left")), num(map.get("right"))));
+            } catch (RuntimeException ignored) {
+                // a non-numeric entry cannot be a bounding box
+            }
+        }
+        return rects;
+    }
+
+    private static double num(Object value) {
+        if (value instanceof Number number) {
+            return number.doubleValue();
+        }
+        if (value instanceof String text) {
+            return Double.parseDouble(text);
+        }
+        throw new IllegalArgumentException("not a number: " + value);
+    }
+
     /** Mustache-expanded HTML with inlined fonts, before the browser. */
-    String expanded(long tenantId, String code, Map<String, Object> model) {
+    public String expanded(long tenantId, String code, Map<String, Object> model) {
         String body = registry.latestApproved(tenantId, code)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "TEMPLATE_NOT_FOUND",
                         "No approved template for " + code))
