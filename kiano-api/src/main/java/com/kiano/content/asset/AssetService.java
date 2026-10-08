@@ -2,6 +2,7 @@ package com.kiano.content.asset;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.kiano.content.copy.CopyAssembler;
 import com.kiano.content.generation.GenerationJob;
 import com.kiano.content.generation.GenerationJobStore;
 import com.kiano.content.generation.JobStatus;
@@ -116,6 +117,109 @@ public class AssetService {
         return new AssetView(entity.getId(), job.productId(), specCode, job.variant(), version,
                 entity.getStatus(), result.flags(), result.metrics(), fileName,
                 sourceMediaId(provenance), entity.getCreatedAt().toInstant());
+    }
+
+    @Transactional
+    public AssetView createText(long tenantId, long productId, String specCode, String variant,
+            CopyAssembler.TextAsset text, int factVersion, Map<String, Object> provenance,
+            PrecheckResult precheck) {
+        int version = nextVersion(tenantId, productId, specCode, variant);
+        AssetEntity entity = new AssetEntity();
+        entity.setTenantId(tenantId);
+        entity.setProductId(productId);
+        entity.setSpecCode(specCode);
+        entity.setVariant(variant);
+        entity.setVersion(version);
+        entity.setKind("TEXT");
+        entity.setTextBody(text.textBody());
+        entity.setContentJson(objectMapper.writeValueAsString(text.contentJson()));
+        entity.setStatus(AssetStatus.IN_REVIEW.name());
+        entity.setPrecheckJson(objectMapper.writeValueAsString(Map.of(
+                "flags", precheck.flags().stream().map(Enum::name).toList(),
+                "metrics", precheck.metrics())));
+        entity.setProvenanceJson(objectMapper.writeValueAsString(provenance));
+        entity.setFactVersion(factVersion);
+        entity.setCreatedAt(OffsetDateTime.now());
+        mapper.insert(entity);
+
+        mapper.update(null, new LambdaUpdateWrapper<AssetEntity>()
+                .eq(AssetEntity::getTenantId, tenantId)
+                .eq(AssetEntity::getProductId, productId)
+                .eq(AssetEntity::getSpecCode, specCode)
+                .eq(AssetEntity::getVariant, variant)
+                .in(AssetEntity::getStatus, AssetStatus.DRAFT.name(), AssetStatus.IN_REVIEW.name())
+                .ne(AssetEntity::getId, entity.getId())
+                .set(AssetEntity::getStatus, AssetStatus.ARCHIVED.name()));
+
+        auditLog.record(new AuditEntry(tenantId, ActorType.SYSTEM, "pipeline",
+                "ASSET_CREATED", "asset", String.valueOf(entity.getId()), null,
+                Map.of("specCode", specCode, "version", version,
+                        "status", AssetStatus.IN_REVIEW.name(),
+                        "flags", precheck.flags().stream().map(Enum::name).toList()),
+                null, "COPY"));
+        return new AssetView(entity.getId(), productId, specCode, variant, version,
+                entity.getStatus(), precheck.flags(), precheck.metrics(), null, null,
+                entity.getCreatedAt().toInstant());
+    }
+
+    /**
+     * Saves a template-rendered PNG (PAGE_INFO/PAGE_SPEC) as a JPEG asset with
+     * thumbnail in IN_REVIEW. These are deterministically rendered (no AI), so
+     * precheck is skipped; the file name uses angle page-info/page-spec, type
+     * real and the standard variant "default".
+     */
+    @Transactional
+    public AssetView createImageFromBytes(long tenantId, long productId, String specCode,
+            String variant, byte[] png, int factVersion, Map<String, Object> provenance,
+            String sku) {
+        BufferedImage image = ImageCodec.read(png);
+        byte[] full = ImageCodec.jpeg(image, JPEG_QUALITY);
+        byte[] thumb = ImageCodec.thumbnailJpeg(image, THUMBNAIL_LONG_SIDE);
+        int version = nextVersion(tenantId, productId, specCode, variant);
+        String prefix = "t" + tenantId + "/assets/" + productId + "/" + specCode + "/"
+                + variant + "/v" + version;
+        String fullKey = prefix + ".jpg";
+        String thumbKey = prefix + "_thumb.jpg";
+        storage.put(fullKey, full, "image/jpeg");
+        storage.put(thumbKey, thumb, "image/jpeg");
+
+        String angle = "PAGE_SPEC".equals(specCode) ? "page-spec" : "page-info";
+        String fileName = AssetFileName.format(sku, angle, "real",
+                image.getWidth(), image.getHeight(), version, "jpg");
+        AssetEntity entity = new AssetEntity();
+        entity.setTenantId(tenantId);
+        entity.setProductId(productId);
+        entity.setSpecCode(specCode);
+        entity.setVariant(variant);
+        entity.setVersion(version);
+        entity.setKind("IMAGE");
+        entity.setObjectKey(fullKey);
+        entity.setThumbObjectKey(thumbKey);
+        entity.setWidth(image.getWidth());
+        entity.setHeight(image.getHeight());
+        entity.setStatus(AssetStatus.IN_REVIEW.name());
+        entity.setPrecheckJson(objectMapper.writeValueAsString(Map.of(
+                "flags", List.of(), "metrics", Map.of())));
+        entity.setProvenanceJson(objectMapper.writeValueAsString(provenance));
+        entity.setFactVersion(factVersion);
+        entity.setFileName(fileName);
+        entity.setCreatedAt(OffsetDateTime.now());
+        mapper.insert(entity);
+
+        mapper.update(null, new LambdaUpdateWrapper<AssetEntity>()
+                .eq(AssetEntity::getTenantId, tenantId)
+                .eq(AssetEntity::getProductId, productId)
+                .eq(AssetEntity::getSpecCode, specCode)
+                .eq(AssetEntity::getVariant, variant)
+                .in(AssetEntity::getStatus, AssetStatus.DRAFT.name(), AssetStatus.IN_REVIEW.name())
+                .ne(AssetEntity::getId, entity.getId())
+                .set(AssetEntity::getStatus, AssetStatus.ARCHIVED.name()));
+        auditLog.record(new AuditEntry(tenantId, ActorType.SYSTEM, "pipeline",
+                "ASSET_CREATED", "asset", String.valueOf(entity.getId()), null,
+                Map.of("specCode", specCode, "version", version), null, "TEMPLATE"));
+        return new AssetView(entity.getId(), productId, specCode, variant, version,
+                entity.getStatus(), List.of(), Map.of(), fileName, null,
+                entity.getCreatedAt().toInstant());
     }
 
     private PrecheckResult runPrecheck(GenerationJob job, BufferedImage image) {

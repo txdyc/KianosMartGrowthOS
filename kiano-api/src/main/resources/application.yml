@@ -79,3 +79,9 @@ kiano:
         fps-max: 31.0
         v1-min-seconds: 10
         v1-max-seconds: 20
+    copy:
+      forbidden-claims: [best in ghana, 100% guaranteed, no.1, number one, cheapest, lowest price, guaranteed results]
+      max-title: 120
+      max-gshop: 150
+      max-seo-title: 60
+      max-seo-description: 155

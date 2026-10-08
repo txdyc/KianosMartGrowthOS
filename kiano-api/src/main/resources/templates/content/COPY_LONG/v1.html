@@ -1,0 +1,17 @@
+<section class="kiano-long">
+  <h2>Why you'll love it</h2>
+  {{#whyBuy}}<p>{{.}}</p>{{/whyBuy}}
+
+  <h2>Specifications</h2>
+  <table class="kiano-spec">
+    {{#rows}}<tr><th>{{label}}</th><td>{{value}}</td></tr>{{/rows}}
+  </table>
+
+  {{#hasFaq}}
+  <h2>Questions and answers</h2>
+  {{#faq}}<p><strong>{{q}}</strong><br>{{a}}</p>{{/faq}}
+  {{/hasFaq}}
+
+  {{#policyOpen}}<div class="kiano-policy-slot"></div>{{/policyOpen}}
+  {{^policyOpen}}<!-- POLICY_PENDING -->{{/policyOpen}}
+</section>

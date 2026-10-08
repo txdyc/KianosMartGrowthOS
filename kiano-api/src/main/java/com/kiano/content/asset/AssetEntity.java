@@ -32,6 +32,7 @@ public class AssetEntity {
     private String status;
     private String precheckJson;
     private String provenanceJson;
+    private @Nullable String contentJson;
     private @Nullable BigDecimal aiRatio;
     private @Nullable Boolean dependsOnPrice;
     private @Nullable BigDecimal priceSnapshot;
@@ -166,6 +167,14 @@ public class AssetEntity {
 
     public void setProvenanceJson(String provenanceJson) {
         this.provenanceJson = provenanceJson;
+    }
+
+    public @Nullable String getContentJson() {
+        return contentJson;
+    }
+
+    public void setContentJson(@Nullable String contentJson) {
+        this.contentJson = contentJson;
     }
 
     public @Nullable BigDecimal getAiRatio() {
