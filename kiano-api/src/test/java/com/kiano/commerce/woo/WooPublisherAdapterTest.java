@@ -115,6 +115,26 @@ class WooPublisherAdapterTest {
     }
 
     @Test
+    void uploadMedia_altTextFails_deletesTheCreatedMediaBeforeFailing() {
+        woo.stubFor(post(urlPathEqualTo("/wp-json/wp/v2/media"))
+                .willReturn(aResponse().withStatus(201)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"id\":7,\"source_url\":\"http://x/7.jpg\"}")));
+        woo.stubFor(post(urlPathEqualTo("/wp-json/wp/v2/media/7"))
+                .willReturn(aResponse().withStatus(500)
+                        .withHeader("Content-Type", "application/json").withBody("{}")));
+        woo.stubFor(delete(urlPathEqualTo("/wp-json/wp/v2/media/7"))
+                .willReturn(aResponse().withStatus(200)
+                        .withHeader("Content-Type", "application/json").withBody("{}")));
+
+        // The caller never learns the id, so the adapter must not leave it orphaned.
+        assertThatThrownBy(() -> adapter().uploadMedia("a.jpg", new byte[]{1}, "image/jpeg", "alt"))
+                .isInstanceOf(CommerceException.class);
+        woo.verify(deleteRequestedFor(urlPathEqualTo("/wp-json/wp/v2/media/7"))
+                .withQueryParam("force", equalTo("true")));
+    }
+
+    @Test
     void updateContent_sendsImageIdsInOrderAndRankMathMeta() {
         woo.stubFor(put(urlPathEqualTo("/wp-json/wc/v3/products/42"))
                 .willReturn(aResponse().withStatus(200)

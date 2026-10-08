@@ -93,10 +93,21 @@ public class WooPublisherAdapter implements CommercePublisher {
         JsonNode created = objectMapper.readTree(postRaw(wpClient, "/media", fileName, bytes,
                 contentType));
         long id = created.path("id").asLong();
-        // Set the alt text in a second call (wp/v2/media/{id}).
+        // Set the alt text in a second call (wp/v2/media/{id}). If it fails the
+        // caller never learns the id, so delete the media here instead of
+        // leaving an orphan in the library.
         String altBody = objectMapper.writeValueAsString(Map.of("alt_text", altText));
-        JsonNode updated = objectMapper.readTree(postJson(wpClient, "/media/" + id, altBody));
-        return new WooMedia(id, updated.path("source_url").asText(""));
+        try {
+            JsonNode updated = objectMapper.readTree(postJson(wpClient, "/media/" + id, altBody));
+            return new WooMedia(id, updated.path("source_url").asText(""));
+        } catch (RuntimeException altFailure) {
+            try {
+                deleteMedia(id);
+            } catch (RuntimeException deleteFailure) {
+                altFailure.addSuppressed(deleteFailure);
+            }
+            throw altFailure;
+        }
     }
 
     @Override
