@@ -1,6 +1,8 @@
 package com.kiano.content.derive;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.kiano.content.ContentTier;
+import com.kiano.content.ads.AdCopyTaskHandler;
 import com.kiano.content.asset.AssetEntity;
 import com.kiano.content.asset.AssetMapper;
 import com.kiano.content.asset.AssetStatus;
@@ -8,6 +10,7 @@ import com.kiano.content.asset.MainImageApprovedEvent;
 import com.kiano.content.copy.CopyGenerationTaskHandler;
 import com.kiano.content.facts.FactLockedEvent;
 import com.kiano.content.facts.FactSheetService;
+import com.kiano.content.profile.ProductProfileService;
 import com.kiano.platform.audit.ActorType;
 import com.kiano.platform.audit.AuditEntry;
 import com.kiano.platform.audit.AuditLog;
@@ -31,17 +34,19 @@ public class FactDependentAssets {
 
     private static final List<String> DERIVED_SPECS =
             List.of("COPY_TITLE", "COPY_SHORT", "COPY_LONG", "COPY_SEO", "COPY_GSHOP",
-                    "COPY_WA", "PAGE_INFO", "PAGE_SPEC");
+                    "COPY_WA", "PAGE_INFO", "PAGE_SPEC", "AD_COPY", "AD_STATIC");
 
     private final AssetMapper assetMapper;
     private final FactSheetService factSheetService;
+    private final ProductProfileService profileService;
     private final TaskQueue queue;
     private final AuditLog auditLog;
 
     public FactDependentAssets(AssetMapper assetMapper, FactSheetService factSheetService,
-            TaskQueue queue, AuditLog auditLog) {
+            ProductProfileService profileService, TaskQueue queue, AuditLog auditLog) {
         this.assetMapper = assetMapper;
         this.factSheetService = factSheetService;
+        this.profileService = profileService;
         this.queue = queue;
         this.auditLog = auditLog;
     }
@@ -82,6 +87,11 @@ public class FactDependentAssets {
             queue.enqueue(tenantId, TemplateRenderTaskHandler.TYPE,
                     Map.of("productId", productId, "factVersion", version, "spec", "PAGE_INFO"),
                     "template-render:" + productId + ":" + version + ":PAGE_INFO");
+        }
+        if (profileService.tierOf(tenantId, productId) == ContentTier.HERO) {
+            queue.enqueue(tenantId, AdCopyTaskHandler.TYPE,
+                    Map.of("productId", productId, "factVersion", version),
+                    "ad-copy:" + productId + ":" + version);
         }
     }
 

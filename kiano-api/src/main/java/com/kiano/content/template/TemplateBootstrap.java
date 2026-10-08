@@ -33,7 +33,8 @@ public class TemplateBootstrap implements ApplicationRunner {
             new Baseline("POLICY_BLOCK", "POLICY_BLOCK"),
             new Baseline("COPY_PROMPT", "COPY_PROMPT"),
             new Baseline("COPY_LONG", "COPY_LAYOUT"),
-            new Baseline("COPY_SHORT", "COPY_LAYOUT"));
+            new Baseline("COPY_SHORT", "COPY_LAYOUT"),
+            new Baseline("AD_COPY_PROMPT", "COPY_PROMPT"));
 
     private final JdbcTemplate jdbcTemplate;
     private final TemplateRegistry registry;

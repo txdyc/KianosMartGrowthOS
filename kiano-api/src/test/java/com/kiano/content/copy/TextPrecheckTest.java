@@ -99,4 +99,22 @@ class TextPrecheckTest {
                 "Works on 220-240V outlets", facts());
         assertThat(result.flags()).doesNotContain(PrecheckFlag.FACT_MISMATCH);
     }
+
+    @Test
+    void adCopy_priceOrTooLongHeadline_flagged() {
+        com.kiano.content.ads.AdCopyText price = new com.kiano.content.ads.AdCopyText(
+                "Save big today", "Now GH₵ 250", "Great kettle");
+        PrecheckResult priceResult = precheck.checkAdCopy(price, facts());
+        assertThat(priceResult.flags()).contains(PrecheckFlag.PRICE_IN_COPY);
+
+        com.kiano.content.ads.AdCopyText tooLong = new com.kiano.content.ads.AdCopyText(
+                "ok", "x".repeat(41), "y");
+        PrecheckResult longResult = precheck.checkAdCopy(tooLong, facts());
+        assertThat(longResult.flags()).contains(PrecheckFlag.TOO_LONG);
+        assertThat(longResult.metrics().get("field")).isEqualTo("headline");
+
+        com.kiano.content.ads.AdCopyText clean = new com.kiano.content.ads.AdCopyText(
+                "Auto shut-off", "Boils in minutes", "Fast and safe");
+        assertThat(precheck.checkAdCopy(clean, facts()).flags()).isEmpty();
+    }
 }

@@ -1,5 +1,6 @@
 package com.kiano.content.copy;
 
+import com.kiano.content.ads.AdCopyText;
 import com.kiano.content.asset.PrecheckFlag;
 import com.kiano.content.asset.PrecheckResult;
 import com.kiano.content.facts.FactsJson;
@@ -70,6 +71,51 @@ public class TextPrecheck {
         }
         if ("COPY_LONG".equals(specCode) && text.contains("POLICY_PENDING")) {
             flags.add(PrecheckFlag.POLICY_PENDING);
+        }
+        return new PrecheckResult(List.copyOf(flags), metrics);
+    }
+
+    /**
+     * Precheck for one hook's ad copy: the shared fact/claim/price rules plus
+     * per-field length caps (overlay/headline 40, primaryText 125); the too-long
+     * flag records which field overflowed in metrics.field.
+     */
+    public PrecheckResult checkAdCopy(AdCopyText text, FactsJson facts) {
+        List<PrecheckFlag> flags = new ArrayList<>();
+        Map<String, Object> metrics = new LinkedHashMap<>();
+        String plain = TAG.matcher((text.overlay() == null ? "" : text.overlay()) + " "
+                + (text.headline() == null ? "" : text.headline()) + " "
+                + (text.primaryText() == null ? "" : text.primaryText())).replaceAll(" ");
+        Set<QuantityNormalizer.Quantity> copyQuantities = QuantityNormalizer.extract(plain);
+        Set<QuantityNormalizer.Quantity> factQuantities = factQuantities(facts);
+        List<String> unmatched = copyQuantities.stream()
+                .filter(q -> !factQuantities.contains(q))
+                .map(q -> q.value().toPlainString() + " " + q.unit())
+                .toList();
+        if (!unmatched.isEmpty()) {
+            flags.add(PrecheckFlag.FACT_MISMATCH);
+            metrics.put("unmatched", unmatched);
+        }
+        for (String claim : forbiddenClaims(facts)) {
+            if (containsWord(plain, claim)) {
+                flags.add(PrecheckFlag.FORBIDDEN_CLAIM);
+                break;
+            }
+        }
+        if (CURRENCY.matcher(plain).find()) {
+            flags.add(PrecheckFlag.PRICE_IN_COPY);
+        }
+        String field = null;
+        if (text.overlay() != null && text.overlay().length() > 40) {
+            field = "overlay";
+        } else if (text.headline() != null && text.headline().length() > 40) {
+            field = "headline";
+        } else if (text.primaryText() != null && text.primaryText().length() > 125) {
+            field = "primaryText";
+        }
+        if (field != null) {
+            flags.add(PrecheckFlag.TOO_LONG);
+            metrics.put("field", field);
         }
         return new PrecheckResult(List.copyOf(flags), metrics);
     }

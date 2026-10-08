@@ -153,6 +153,29 @@ class LlmRouteStoreTest {
     }
 
     @Test
+    void adCopy_resolvesCopyRoute_keepsPurpose() {
+        long providerId = store.createProvider(tenantId, "DeepSeek",
+                ProviderKind.OPENAI_COMPATIBLE, "https://api.deepseek.com", "sk-ad-1");
+        store.saveRoute(tenantId, LlmPurpose.COPY, providerId, "deepseek-flash", true,
+                new Pricing(new BigDecimal("0.30"), new BigDecimal("1.20"),
+                        new BigDecimal("0.006")));
+
+        ResolvedRoute ad = store.resolve(tenantId, LlmPurpose.AD_COPY);
+
+        assertThat(ad.purpose()).isEqualTo(LlmPurpose.AD_COPY);
+        assertThat(ad.kind()).isEqualTo(ProviderKind.OPENAI_COMPATIBLE);
+        assertThat(ad.model()).isEqualTo("deepseek-flash");
+        assertThat(ad.apiKey()).isEqualTo("sk-ad-1");
+        assertThat(ad.usingDefault()).isFalse();
+
+        // no route at all → env default keeps the AD_COPY purpose too
+        store.deleteRoute(tenantId, LlmPurpose.COPY);
+        ResolvedRoute defaultAd = store.resolve(tenantId, LlmPurpose.AD_COPY);
+        assertThat(defaultAd.usingDefault()).isTrue();
+        assertThat(defaultAd.purpose()).isEqualTo(LlmPurpose.AD_COPY);
+    }
+
+    @Test
     void listRoutes_alwaysHasBothPurposes() {
         long providerId = store.createProvider(tenantId, "DeepSeek",
                 ProviderKind.OPENAI_COMPATIBLE, "https://api.deepseek.com", "sk-x-2");

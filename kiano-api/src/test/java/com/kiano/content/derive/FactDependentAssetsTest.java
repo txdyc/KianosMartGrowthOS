@@ -85,6 +85,7 @@ class FactDependentAssetsTest {
         jdbcTemplate.update("delete from product_fact_sheet");
         jdbcTemplate.update("delete from llm_call");
         jdbcTemplate.update("delete from store_policy");
+        jdbcTemplate.update("delete from product_profile");
         jdbcTemplate.update("delete from product_category");
         jdbcTemplate.update("delete from product");
         jdbcTemplate.update("delete from category");
@@ -212,5 +213,42 @@ class FactDependentAssetsTest {
         // No handler invocation here; the skip logic is covered by the handler
         // test below. This asserts nothing is enqueued when only stale tasks exist.
         assertThat(queue.latest(tenantId, "TEMPLATE_RENDER")).isEmpty();
+    }
+
+    @Test
+    void factLock_onHero_enqueuesAdCopy_nonHero_doesNot() {
+        jdbcTemplate.update("insert into product_profile (product_id, tenant_id, content_tier) "
+                + "values (?, ?, 'HERO')", productId, tenantId);
+        lockFacts();
+
+        assertThat(queue.latest(tenantId, "AD_COPY_GENERATE")).isPresent();
+        assertThat(jdbcTemplate.queryForObject(
+                "select payload from platform_task where tenant_id = ? and type = 'AD_COPY_GENERATE'",
+                String.class, tenantId)).contains(String.valueOf(factSheetService
+                        .locked(tenantId, productId).get().version()));
+
+        // a non-HERO product (no profile row) does not enqueue ad copy
+        jdbcTemplate.update("delete from product_profile where product_id = ?", productId);
+        jdbcTemplate.update("delete from platform_task");
+        long secondId = jdbcTemplate.queryForObject(
+                "insert into product (tenant_id, store_id, external_id, type, sku, name, status, synced_at) "
+                        + "values (?, ?, -6002, 'simple', 'MG-KTL18', 'Kettle 2', 'publish', now()) "
+                        + "returning id",
+                Long.class, tenantId, storeId);
+        long userId = jdbcTemplate.queryForObject(
+                "insert into app_user (tenant_id, email, name, password_hash, role) "
+                        + "values (?, 'derive-op3@example.test', 'Op3', ?, 'OPERATOR') returning id",
+                Long.class, tenantId, passwordEncoder.encode("op-pass-123"));
+        CurrentUser user = new CurrentUser(userId, tenantId, Role.OPERATOR,
+                "derive-op3@example.test");
+        FactsJson facts = new FactsJson("MG-KTL18", "Kettles", "1 L", 200, "220V",
+                "Steel", "Black", "6 months", List.of("Kettle"), List.of(), List.of(), List.of());
+        factSheetService.saveDraft(user, secondId, facts,
+                Map.of("model", com.kiano.content.facts.FieldSource.P5));
+        factSheetService.lock(user, secondId, 1,
+                Set.of("model", "capacity", "powerW", "voltage", "warranty", "inBox"));
+
+        assertThat(queue.latest(tenantId, "AD_COPY_GENERATE")).isEmpty();
+        assertThat(queue.latest(tenantId, "COPY_GENERATE")).isPresent();
     }
 }
