@@ -1,8 +1,12 @@
 package com.kiano.platform.llm;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 
 import com.kiano.TestcontainersConfiguration;
+import com.kiano.platform.crypto.CredentialCipher;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -13,6 +17,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 /**
  * LlmRouteStore: encrypted provider storage (ciphertext, never the key), the
@@ -33,6 +38,9 @@ class LlmRouteStoreTest {
 
     @Autowired
     private LlmProperties properties;
+
+    @MockitoSpyBean
+    private CredentialCipher cipher;
 
     private long tenantId;
 
@@ -171,5 +179,17 @@ class LlmRouteStoreTest {
         BigDecimal cost = pricing.cost(1000, 500, 400);
 
         assertThat(cost).isEqualByComparingTo("0.000782");
+    }
+
+    @Test
+    void createProvider_isAtomic_noRowLeftWhenKeyEncryptionFails() {
+        doThrow(new IllegalStateException("cipher down")).when(cipher).encrypt(anyString(), anyString());
+
+        assertThatThrownBy(() -> store.createProvider(tenantId, "Broken",
+                ProviderKind.OPENAI_COMPATIBLE, "https://x.test", "sk-secret-123"))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(jdbc.queryForObject("select count(*) from llm_provider where name = 'Broken'",
+                Integer.class)).isZero();
     }
 }

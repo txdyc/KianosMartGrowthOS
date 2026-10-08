@@ -17,6 +17,7 @@ import org.jspecify.annotations.Nullable;
 import org.springframework.core.env.Environment;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * OWNER LLM settings: provider + route management with encrypted keys, business
@@ -53,6 +54,7 @@ public class LlmSettingsService {
                 store.listRoutes(user.tenantId()), LlmPresets.all());
     }
 
+    @Transactional
     public long createProvider(CurrentUser user, ProviderInput input) {
         String name = requiredName(input.name());
         validateBaseUrl(input.kind(), input.baseUrl());
@@ -69,24 +71,35 @@ public class LlmSettingsService {
         long id = store.createProvider(user.tenantId(), name, input.kind(), baseUrl,
                 input.apiKey());
         audit(user, "LLM_PROVIDER_CREATED", "provider", String.valueOf(id),
-                null, providerState(name, input.kind(), baseUrl));
+                null, providerState(name, input.kind(), baseUrl, true));
         return id;
     }
 
+    /**
+     * Renames a provider, changes its base URL and/or rotates its key. The kind
+     * is fixed at creation: switching ANTHROPIC ↔ OPENAI_COMPATIBLE means a
+     * different client and key format, so it is a new provider, not an edit.
+     */
+    @Transactional
     public void updateProvider(CurrentUser user, long id, ProviderInput input) {
         LlmRouteStore.ProviderView existing = requireProvider(user.tenantId(), id);
+        if (input.kind() != null && input.kind() != existing.kind()) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "LLM_PROVIDER_KIND_IMMUTABLE",
+                    "A provider's kind cannot change; add a new provider instead");
+        }
         String name = requiredName(input.name());
-        ProviderKind kind = input.kind() == null ? existing.kind() : input.kind();
+        ProviderKind kind = existing.kind();
         validateBaseUrl(kind, input.baseUrl());
         String baseUrl = normalizeBaseUrl(kind, input.baseUrl());
         store.updateProvider(user.tenantId(), id, name, baseUrl, input.apiKey());
+        // ANTHROPIC providers have a null base URL, so these maps must allow nulls.
         audit(user, "LLM_PROVIDER_UPDATED", "provider", String.valueOf(id),
-                Map.of("name", existing.name(), "kind", existing.kind().name(),
-                        "baseUrl", existing.baseUrl(), "hasKey", existing.hasKey()),
-                Map.of("name", name, "kind", kind.name(), "baseUrl", baseUrl, "hasKey",
-                        storedKey(user.tenantId(), id)));
+                providerState(existing.name(), existing.kind(), existing.baseUrl(),
+                        existing.hasKey()),
+                providerState(name, kind, baseUrl, storedKey(user.tenantId(), id)));
     }
 
+    @Transactional
     public void deleteProvider(CurrentUser user, long id) {
         requireProvider(user.tenantId(), id);
         if (store.isProviderInUse(user.tenantId(), id)) {
@@ -98,6 +111,7 @@ public class LlmSettingsService {
                 Map.of("id", id), null);
     }
 
+    @Transactional
     public void saveRoute(CurrentUser user, LlmPurpose purpose, RouteInput input) {
         if (purpose != LlmPurpose.FACT_DRAFT && purpose != LlmPurpose.COPY) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED",
@@ -129,6 +143,7 @@ public class LlmSettingsService {
                         input.outputPerMtok(), "cacheReadPerMtok", input.cacheReadPerMtok()));
     }
 
+    @Transactional
     public void deleteRoute(CurrentUser user, LlmPurpose purpose) {
         if (purpose != LlmPurpose.FACT_DRAFT && purpose != LlmPurpose.COPY) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED",
@@ -225,13 +240,14 @@ public class LlmSettingsService {
         return map;
     }
 
+    /** Audit snapshot of a provider (never the key); LinkedHashMap allows a null base URL. */
     private Map<String, Object> providerState(String name, ProviderKind kind,
-            @Nullable String baseUrl) {
+            @Nullable String baseUrl, boolean hasKey) {
         Map<String, Object> map = new LinkedHashMap<>();
         map.put("name", name);
         map.put("kind", kind.name());
         map.put("baseUrl", baseUrl);
-        map.put("hasKey", true);
+        map.put("hasKey", hasKey);
         return map;
     }
 

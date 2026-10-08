@@ -13,6 +13,7 @@ import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Read/write access to llm_provider and llm_route, encrypted keys via
@@ -122,14 +123,16 @@ public class LlmRouteStore {
     private ProviderView providerView(ResultSet rs) throws SQLException {
         return new ProviderView(rs.getLong("id"), rs.getString("name"),
                 ProviderKind.valueOf(rs.getString("kind")), rs.getString("base_url"),
-                rs.getString("credentials_encrypted") != null, rs.getString("status"),
+                hasCiphertext(rs.getString("credentials_encrypted")), rs.getString("status"),
                 rs.getTimestamp("updated_at").toInstant());
     }
 
+    @Transactional
     public long createProvider(long tenantId, String name, ProviderKind kind,
             @Nullable String baseUrl, String apiKey) {
         // credentials_encrypted is NOT NULL; insert a placeholder, get the id,
-        // then write the real ciphertext with the id-based AAD.
+        // then write the real ciphertext with the id-based AAD. One transaction,
+        // so a failed encryption never leaves a keyless provider behind.
         Long id = jdbc.queryForObject("""
                 insert into llm_provider (tenant_id, name, kind, base_url, credentials_encrypted,
                                           status, updated_at)
@@ -212,6 +215,10 @@ public class LlmRouteStore {
     public void deleteRoute(long tenantId, LlmPurpose purpose) {
         jdbc.update("delete from llm_route where tenant_id = ? and purpose = ?",
                 tenantId, purpose.name());
+    }
+
+    private static boolean hasCiphertext(@Nullable String stored) {
+        return stored != null && !stored.isBlank();
     }
 
     private static String aad(long tenantId, long providerId) {

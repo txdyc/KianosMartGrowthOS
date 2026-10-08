@@ -156,4 +156,55 @@ class LlmSettingsServiceTest {
         assertThat(service.get(owner).providers()).extracting(p -> p.name())
                 .contains("DeepSeek-2");
     }
+
+    @Test
+    void updateAnthropicProvider_rotatesKey_andAuditsWithoutKey() {
+        // Anthropic providers have no base URL; the audit maps must accept that.
+        long providerId = service.createProvider(owner, new ProviderInput("Claude",
+                ProviderKind.ANTHROPIC, null, "sk-ant-old-key-111"));
+        jdbc.update("insert into llm_route (tenant_id, purpose, provider_id, model, "
+                + "supports_images, input_per_mtok, output_per_mtok, cache_read_per_mtok) "
+                + "values (?, 'COPY', ?, 'claude-opus-5-5', true, 4, 20, 0.2)",
+                tenantId, providerId);
+
+        service.updateProvider(owner, providerId, new ProviderInput("Claude",
+                ProviderKind.ANTHROPIC, null, "sk-ant-new-key-222"));
+
+        assertThat(store.resolve(tenantId, LlmPurpose.COPY).apiKey()).isEqualTo("sk-ant-new-key-222");
+        String audit = jdbc.queryForObject("select before_json::text || after_json::text "
+                + "from audit_log where action = 'LLM_PROVIDER_UPDATED'", String.class);
+        assertThat(audit).contains("Claude").doesNotContain("sk-ant");
+    }
+
+    @Test
+    void updateProvider_kindChange_422_andNothingChanged() {
+        long providerId = service.createProvider(owner, new ProviderInput("DeepSeek",
+                ProviderKind.OPENAI_COMPATIBLE, "https://api.deepseek.com", "sk-ds-123456789"));
+
+        assertThatThrownBy(() -> service.updateProvider(owner, providerId, new ProviderInput(
+                "DeepSeek", ProviderKind.ANTHROPIC, null, null)))
+                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+                    assertThat(ex.getCode()).isEqualTo("LLM_PROVIDER_KIND_IMMUTABLE");
+                });
+        assertThat(store.findProvider(tenantId, providerId)).get()
+                .satisfies(p -> {
+                    assertThat(p.kind()).isEqualTo(ProviderKind.OPENAI_COMPATIBLE);
+                    assertThat(p.baseUrl()).isEqualTo("https://api.deepseek.com");
+                });
+        // Repeating the stored kind (what the edit form sends) is fine.
+        service.updateProvider(owner, providerId, new ProviderInput("DeepSeek CN",
+                ProviderKind.OPENAI_COMPATIBLE, "https://api.deepseek.com", null));
+        assertThat(store.findProvider(tenantId, providerId).get().name()).isEqualTo("DeepSeek CN");
+    }
+
+    @Test
+    void providerWithEmptyCiphertext_reportsNoKey() {
+        jdbc.update("insert into llm_provider (tenant_id, name, kind, base_url, "
+                + "credentials_encrypted) values (?, 'Broken', 'OPENAI_COMPATIBLE', "
+                + "'https://x.test', '')", tenantId);
+
+        assertThat(service.get(owner).providers()).filteredOn(p -> p.name().equals("Broken"))
+                .singleElement().satisfies(p -> assertThat(p.hasKey()).isFalse());
+    }
 }
