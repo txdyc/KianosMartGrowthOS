@@ -37,8 +37,10 @@ cd kiano-web && pnpm dev                # web，3000
 ## 测试
 
 ```bash
-cd kiano-api && ./mvnw -q verify       # 后端全部测试（Testcontainers，需要 Docker）
+cd kiano-api && ./mvnw -q verify       # 后端全部测试：*Test（surefire）+ *IT（failsafe），需要 Docker
 cd kiano-api && ./mvnw -q test -Dtest=ClassName   # 单个测试类
+# 真实 ComfyUI 链路测试（需 ComfyUI 在 8188、GPU 空闲；默认被 comfy-live 标签排除）
+KIANO_COMFY_LIVE=1 ./mvnw -q test -Dtest=ComfyLiveIT -Dsurefire.excludedGroups= -Dsurefire.failIfNoSpecifiedTests=false
 cd kiano-web && pnpm vitest run && pnpm lint && pnpm build
 ```
 

@@ -38,7 +38,7 @@ docker-compose.yml   默认只启动 postgres + minio；--profile app 再加上 
 ```bash
 docker compose up -d                                  # 启动 postgres(5433) + minio(9000/9001)，需先启动 Docker Desktop
 cd kiano-api && ./mvnw spring-boot:run                # api，端口 8081，会读取 ../.env
-cd kiano-api && ./mvnw -q verify                      # 后端全部测试（Testcontainers，需要 Docker）
+cd kiano-api && ./mvnw -q verify                      # 后端全部测试：*Test + *IT（failsafe），需要 Docker；worker 运行时先停掉它（jar 被锁）
 cd kiano-api && ./mvnw -q test -Dtest=ClassName       # 单个测试类
 cd kiano-web && pnpm dev                              # web，端口 3000
 cd kiano-web && pnpm vitest run && pnpm lint && pnpm build

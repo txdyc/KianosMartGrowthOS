@@ -208,6 +208,25 @@
           <excludedGroups>${surefire.excludedGroups}</excludedGroups>
         </configuration>
       </plugin>
+      <!-- *IT classes (e.g. WorkerLoopIT) are not picked up by surefire's default
+           includes; failsafe runs them in the integration-test phase of `verify`.
+           Same agent and tag exclusion as surefire, so comfy-live stays opt-in. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <configuration>
+          <argLine>@{argLine} -javaagent:${org.mockito:mockito-core:jar}</argLine>
+          <excludedGroups>${surefire.excludedGroups}</excludedGroups>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>integration-test</goal>
+              <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
     </plugins>
   </build>
 </project>
