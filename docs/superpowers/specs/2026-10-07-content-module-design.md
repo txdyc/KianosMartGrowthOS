@@ -395,8 +395,8 @@ C6 之后：Kiano 核心迁移到 VPS，笔记本保留 kiano-worker；然后按
 ## 15. 待确认事项
 
 1. MiniMax H3 API 的访问方式、配额和单价（用于 `cost_usd` 和预算）。
-2. 文案和事实草稿使用的 LLM 提供商（通过 LLM Provider Adapter 接入）。
-3. 站点使用的 SEO 插件（决定 SEO 字段如何写入 Woo）。
-4. staging 环境：使用 KianosMart 本地 Docker 环境，还是单独搭建一个 staging 站点。
+2. ~~文案和事实草稿使用的 LLM 提供商~~ → **已确认（2026-10-08）：Claude API**（默认 `claude-opus-5-5`，经 LlmGateway 接入并记录成本）。
+3. ~~站点使用的 SEO 插件~~ → **已确认（2026-10-08）：Rank Math**（发布时写 `rank_math_title` / `rank_math_description`）。
+4. ~~staging 环境~~ → **已确认（2026-10-08）：KianosMart 本地 Docker**；生产发布前必须先在 staging 发布成功。
 5. 免版税曲库和商用字体的选择。
-6. 店铺政策的最终文本（配送时效、COD 范围、保修、退货），供 POLICY_BLOCK 使用。
+6. 店铺政策的最终文本（配送时效、COD 范围、保修、退货），供 POLICY_BLOCK 使用。**做法已确认（2026-10-08）**：Kiano 内做政策设置页，文本由用户填写；未填完整时文案可生成和审核，但不允许发布。最终文本仍待用户提供。

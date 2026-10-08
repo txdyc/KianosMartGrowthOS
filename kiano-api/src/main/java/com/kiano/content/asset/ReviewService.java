@@ -3,6 +3,11 @@ package com.kiano.content.asset;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.kiano.commerce.ProductCatalog;
 import com.kiano.commerce.ProductView;
+import com.kiano.content.asset.AssetService.AssetView;
+import com.kiano.content.copy.CopyAssembler;
+import com.kiano.content.copy.TextPrecheck;
+import com.kiano.content.facts.FactSheetService;
+import com.kiano.content.facts.FactSheetService.FactSheetView;
 import com.kiano.content.generation.GenerationJob;
 import com.kiano.content.generation.GenerationJobStore;
 import com.kiano.content.generation.GenerationRunStore;
@@ -14,6 +19,7 @@ import com.kiano.platform.audit.ActorType;
 import com.kiano.platform.audit.AuditEntry;
 import com.kiano.platform.audit.AuditLog;
 import com.kiano.platform.auth.CurrentUser;
+import com.kiano.platform.queue.TaskQueue;
 import com.kiano.platform.storage.ObjectStorage;
 import com.kiano.platform.web.ApiException;
 import com.kiano.workerprotocol.JobStep;
@@ -24,7 +30,11 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import org.jsoup.Jsoup;
+import org.jsoup.safety.Safelist;
 import org.jspecify.annotations.Nullable;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -42,9 +52,11 @@ import tools.jackson.databind.ObjectMapper;
 public class ReviewService {
 
     private static final Duration URL_TTL = Duration.ofMinutes(15);
-    private static final Map<String, Integer> SPEC_ORDER = Map.of(
-            "PAGE_MAIN", 0, "PAGE_ANGLE", 1, "PAGE_SCENE", 2, "PAGE_INBOX", 3,
-            "PAGE_INFO", 4, "PAGE_SPEC", 5);
+    private static final Map<String, Integer> SPEC_ORDER = Map.ofEntries(
+            Map.entry("PAGE_MAIN", 0), Map.entry("PAGE_ANGLE", 1), Map.entry("PAGE_SCENE", 2),
+            Map.entry("PAGE_INBOX", 3), Map.entry("PAGE_INFO", 4), Map.entry("PAGE_SPEC", 5),
+            Map.entry("COPY_TITLE", 10), Map.entry("COPY_SHORT", 11), Map.entry("COPY_LONG", 12),
+            Map.entry("COPY_SEO", 13), Map.entry("COPY_GSHOP", 14), Map.entry("COPY_WA", 15));
     private static final Comparator<ReviewItem> ORDER = Comparator
             .comparing((ReviewItem item) -> item.flags().isEmpty())
             .thenComparing(ReviewItem::sku, Comparator.nullsLast(Comparator.naturalOrder()))
@@ -62,13 +74,20 @@ public class ReviewService {
     private final AuditLog auditLog;
     private final ObjectMapper objectMapper;
     private final JdbcTemplate jdbcTemplate;
+    private final ApplicationEventPublisher events;
+    private final TaskQueue queue;
+    private final AssetService assetService;
+    private final TextPrecheck textPrecheck;
+    private final FactSheetService factSheetService;
     private final SecureRandom random = new SecureRandom();
 
     public ReviewService(AssetMapper assetMapper, AssetReviewMapper reviewMapper,
             SourceMediaMapper sourceMediaMapper, ProductCatalog productCatalog,
             ObjectStorage storage, GenerationJobStore jobs, GenerationRunStore runs,
             WorkflowRegistry workflowRegistry, AuditLog auditLog, ObjectMapper objectMapper,
-            JdbcTemplate jdbcTemplate) {
+            JdbcTemplate jdbcTemplate, ApplicationEventPublisher events, TaskQueue queue,
+            AssetService assetService, TextPrecheck textPrecheck,
+            FactSheetService factSheetService) {
         this.assetMapper = assetMapper;
         this.reviewMapper = reviewMapper;
         this.sourceMediaMapper = sourceMediaMapper;
@@ -80,6 +99,11 @@ public class ReviewService {
         this.auditLog = auditLog;
         this.objectMapper = objectMapper;
         this.jdbcTemplate = jdbcTemplate;
+        this.events = events;
+        this.queue = queue;
+        this.assetService = assetService;
+        this.textPrecheck = textPrecheck;
+        this.factSheetService = factSheetService;
     }
 
     public enum Decision {
@@ -90,9 +114,10 @@ public class ReviewService {
 
     /** One asset as shown on the review board; URLs are 15-minute presigned GETs. */
     public record ReviewItem(long assetId, long productId, String sku, String productName,
-            String specCode, String variant, int version, String status,
-            List<PrecheckFlag> flags, Map<String, Object> metrics, String imageUrl, String thumbUrl,
-            String sourceThumbUrl, String sourceUrl, String fileName) {
+            String specCode, String variant, int version, String status, String kind,
+            List<PrecheckFlag> flags, Map<String, Object> metrics, String imageUrl,
+            String thumbUrl, String sourceThumbUrl, String sourceUrl, String fileName,
+            String textBody, Integer charCount, Integer factVersion) {
     }
 
     /** APPROVE/REJECT return the updated item; REGENERATE returns the new run. */
@@ -100,11 +125,12 @@ public class ReviewService {
     }
 
     public List<ReviewItem> list(CurrentUser user, @Nullable Long productId,
-            @Nullable String status) {
+            @Nullable String status, @Nullable String kind) {
         List<AssetEntity> assets = assetMapper.selectList(Wrappers.<AssetEntity>lambdaQuery()
                 .eq(AssetEntity::getTenantId, user.tenantId())
                 .eq(productId != null, AssetEntity::getProductId, productId)
                 .eq(status != null, AssetEntity::getStatus, status)
+                .eq(kind != null, AssetEntity::getKind, kind)
                 .orderByAsc(AssetEntity::getId));
         List<ReviewItem> items = new ArrayList<>();
         for (AssetEntity asset : assets) {
@@ -139,9 +165,14 @@ public class ReviewService {
         };
         asset.setStatus(newStatus);
         assetMapper.updateById(asset);
+        @Nullable
         Long runId = decision == Decision.REGENERATE ? regenerate(user, asset) : null;
         recordReview(user, asset, decision, reasons, comment, newStatus);
-        ReviewItem item = runId == null ? toItem(user.tenantId(), asset) : null;
+        if (decision == Decision.APPROVE && "PAGE_MAIN".equals(asset.getSpecCode())) {
+            events.publishEvent(new MainImageApprovedEvent(user.tenantId(),
+                    asset.getProductId(), asset.getId()));
+        }
+        ReviewItem item = toItem(user.tenantId(), asset);
         return new DecisionResult(item, runId);
     }
 
@@ -159,15 +190,102 @@ public class ReviewService {
             assetMapper.updateById(asset);
             recordReview(user, asset, Decision.APPROVE, List.of(), null,
                     AssetStatus.APPROVED.name());
+            if ("PAGE_MAIN".equals(asset.getSpecCode())) {
+                events.publishEvent(new MainImageApprovedEvent(user.tenantId(),
+                        asset.getProductId(), asset.getId()));
+            }
         }
         return pending.size();
     }
 
+    /** Tags allowed in hand-edited COPY_LONG/COPY_SHORT HTML, plus the trusted
+     * POLICY_BLOCK structure (section/div with class). Everything else is a
+     * 422 TEXT_HTML_NOT_ALLOWED. */
+    private static final Safelist HTML_SAFELIST = Safelist.none()
+            .addTags("p", "ul", "li", "table", "tr", "th", "td", "h2", "h3", "strong", "em",
+                    "section", "div")
+            .addAttributes("section", "class")
+            .addAttributes("div", "class")
+            .addAttributes("tr", "class")
+            .addAttributes("table", "class");
+
+    /**
+     * Manual edit of a text asset (Task 8): applies to IN_REVIEW or REJECTED
+     * text assets, creates a new IN_REVIEW version with provenance manual,
+     * re-runs the text precheck, and (for HTML specs) rejects disallowed
+     * tags. COPY_LONG/COPY_SHORT bodies must stay in the jsoup whitelist.
+     */
+    @Transactional
+    public ReviewItem editText(CurrentUser user, long assetId, String textBody) {
+        AssetEntity asset = assetMapper.selectOne(Wrappers.<AssetEntity>lambdaQuery()
+                .eq(AssetEntity::getTenantId, user.tenantId())
+                .eq(AssetEntity::getId, assetId));
+        if (asset == null) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Asset not found");
+        }
+        if (!"TEXT".equals(asset.getKind())) {
+            throw new ApiException(HttpStatus.CONFLICT, "NOT_A_TEXT_ASSET",
+                    "Only text assets can be edited");
+        }
+        if (!List.of(AssetStatus.IN_REVIEW.name(), AssetStatus.REJECTED.name())
+                .contains(asset.getStatus())) {
+            throw new ApiException(HttpStatus.CONFLICT, "ASSET_NOT_EDITABLE",
+                    "Asset " + assetId + " is " + asset.getStatus() + ", not editable");
+        }
+        if (List.of("COPY_LONG", "COPY_SHORT").contains(asset.getSpecCode())
+                && !Jsoup.isValid(textBody, HTML_SAFELIST)) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "TEXT_HTML_NOT_ALLOWED",
+                    "Only p, ul, li, table, tr, th, td, h2, h3, strong, em and the policy "
+                            + "block markup are allowed in " + asset.getSpecCode());
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> contentJson = asset.getContentJson() == null
+                ? new LinkedHashMap<>()
+                : objectMapper.readValue(asset.getContentJson(), Map.class);
+        contentJson.put("manualEdit", true);
+        int factVersion = asset.getFactVersion() == null ? 0 : asset.getFactVersion();
+        PrecheckResult precheck = precheckFor(asset, textBody, factVersion);
+        Map<String, Object> provenance = new LinkedHashMap<>();
+        provenance.put("manual", true);
+        provenance.put("editedFrom", assetId);
+        provenance.put("by", user.userId());
+        AssetView created = assetService.createText(user.tenantId(), asset.getProductId(),
+                asset.getSpecCode(), asset.getVariant(),
+                new CopyAssembler.TextAsset(textBody, contentJson), factVersion, provenance,
+                precheck);
+        auditLog.record(new AuditEntry(user.tenantId(), ActorType.USER,
+                String.valueOf(user.userId()), "ASSET_TEXT_EDITED", "asset",
+                String.valueOf(created.id()),
+                Map.of("sourceVersion", asset.getVersion()),
+                Map.of("editedFrom", assetId, "version", created.version(), "specCode",
+                        asset.getSpecCode()),
+                null, "REVIEW"));
+        return list(user, null, null, "TEXT").stream()
+                .filter(item -> item.assetId() == created.id())
+                .findFirst()
+                .orElseGet(() -> {
+                    AssetEntity fresh = assetMapper.selectById(created.id());
+                    return toItem(user.tenantId(), fresh);
+                });
+    }
+
+    private PrecheckResult precheckFor(AssetEntity asset, String textBody, int factVersion) {
+        FactSheetView locked = factSheetService.locked(asset.getTenantId(),
+                asset.getProductId()).orElse(null);
+        if (locked == null || locked.version() != factVersion) {
+            return new PrecheckResult(List.of(), Map.of());
+        }
+        return textPrecheck.check(asset.getSpecCode(), textBody, locked.facts());
+    }
+
     /** Recreates the job that produced the asset under a fresh run. */
-    private long regenerate(CurrentUser user, AssetEntity asset) {
+    private @Nullable Long regenerate(CurrentUser user, AssetEntity asset) {
         String pipelineRef = jdbcTemplate.queryForObject(
                 "select pipeline_ref from asset_spec where code = ?", String.class,
                 asset.getSpecCode());
+        if ("COPY".equals(pipelineRef)) {
+            return enqueueTextRegenerate(asset);
+        }
         long runId = runs.create(user.tenantId(), asset.getProductId(), user.userId());
         switch (pipelineRef == null ? "" : pipelineRef) {
             case "SCENE" -> recreateSceneJob(user.tenantId(), asset, runId);
@@ -178,6 +296,25 @@ public class ReviewService {
                     "Assets of spec " + asset.getSpecCode() + " cannot be regenerated yet");
         }
         return runId;
+    }
+
+    /** Text assets regenerate by re-running the copy generator for that spec. */
+    private @Nullable Long enqueueTextRegenerate(AssetEntity asset) {
+        Integer factVersion = asset.getFactVersion();
+        if (factVersion == null) {
+            throw new ApiException(HttpStatus.CONFLICT, "REGENERATE_NOT_POSSIBLE",
+                    "Text asset has no fact version to regenerate against");
+        }
+        Optional<Long> taskId = queue.enqueue(asset.getTenantId(), "COPY_GENERATE",
+                Map.of("productId", asset.getProductId(), "factVersion", factVersion,
+                        "onlySpec", asset.getSpecCode()),
+                "copy:" + asset.getProductId() + ":" + factVersion + ":regen"
+                        + ":" + asset.getSpecCode());
+        if (taskId.isEmpty()) {
+            throw new ApiException(HttpStatus.CONFLICT, "REGENERATE_IN_PROGRESS",
+                    "A copy generation for this spec is already queued or running");
+        }
+        return null;
     }
 
     /** White pages: a fresh cutout whose only downstream is the regenerated page. */
@@ -294,11 +431,16 @@ public class ReviewService {
                         ? presign(media.getThumbObjectKey()) : sourceUrl;
             }
         }
+        boolean text = "TEXT".equals(asset.getKind());
+        String textBody = text ? asset.getTextBody() : null;
+        Integer charCount = text && asset.getTextBody() != null
+                ? asset.getTextBody().replaceAll("<[^>]*>", "").strip().length() : null;
         return new ReviewItem(asset.getId(), asset.getProductId(),
                 product == null ? null : product.sku(), product == null ? null : product.name(),
                 asset.getSpecCode(), asset.getVariant(), asset.getVersion(), asset.getStatus(),
-                flags, metrics, presign(asset.getObjectKey()), presign(asset.getThumbObjectKey()),
-                sourceThumbUrl, sourceUrl, asset.getFileName());
+                asset.getKind(), flags, metrics, presign(asset.getObjectKey()),
+                presign(asset.getThumbObjectKey()), sourceThumbUrl, sourceUrl,
+                asset.getFileName(), textBody, charCount, asset.getFactVersion());
     }
 
     private long firstSourceMediaId(AssetEntity asset) {

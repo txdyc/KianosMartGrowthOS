@@ -122,7 +122,7 @@ class ReviewServiceTest {
         long bMain = asset(productB, "PAGE_MAIN", "main", 1, "IN_REVIEW", "[]", "{}");
         asset(productA, "PAGE_ANGLE", "P4", 1, "REJECTED", "[]", "{}");
 
-        List<ReviewItem> items = service.list(user, null, "IN_REVIEW");
+        List<ReviewItem> items = service.list(user, null, "IN_REVIEW", null);
 
         assertThat(items).extracting(ReviewItem::assetId)
                 .containsExactly(flaggedB, aMain, aAngle2, aAngle6, aScene1, aScene2, aInbox, bMain);
@@ -141,8 +141,8 @@ class ReviewServiceTest {
         assertThat(main.fileName()).isEqualTo("MG-A_page-main_real_1600x1600_v1.jpg");
 
         // Product filter narrows to one product, unfiltered returns everything.
-        assertThat(service.list(user, productB, null)).hasSize(2);
-        assertThat(service.list(user, null, null)).hasSize(9);
+        assertThat(service.list(user, productB, null, null)).hasSize(2);
+        assertThat(service.list(user, null, null, null)).hasSize(9);
     }
 
     @Test

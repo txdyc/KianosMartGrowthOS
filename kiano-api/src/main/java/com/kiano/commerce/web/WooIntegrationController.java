@@ -1,7 +1,8 @@
 package com.kiano.commerce.web;
 
 import com.kiano.commerce.CommerceException;
-import com.kiano.commerce.woo.CommercePortFactory;
+import com.kiano.commerce.PublishEnvironment;
+import com.kiano.commerce.woo.CommercePublisherFactory;
 import com.kiano.commerce.woo.WooCredentials;
 import com.kiano.platform.audit.ActorType;
 import com.kiano.platform.audit.AuditEntry;
@@ -9,6 +10,7 @@ import com.kiano.platform.audit.AuditLog;
 import com.kiano.platform.auth.CurrentUser;
 import com.kiano.platform.integration.IntegrationStore;
 import com.kiano.platform.integration.StoredIntegration;
+import com.kiano.platform.web.ApiException;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import java.time.Instant;
@@ -23,6 +25,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -35,14 +38,15 @@ import org.springframework.web.bind.annotation.RestController;
 public class WooIntegrationController {
 
     private final IntegrationStore integrationStore;
-    private final CommercePortFactory portFactory;
+    private final CommercePublisherFactory commercePublisherFactory;
     private final AuditLog auditLog;
     private final JdbcTemplate jdbcTemplate;
 
-    public WooIntegrationController(IntegrationStore integrationStore, CommercePortFactory portFactory,
+    public WooIntegrationController(IntegrationStore integrationStore,
+            CommercePublisherFactory commercePublisherFactory,
             AuditLog auditLog, JdbcTemplate jdbcTemplate) {
         this.integrationStore = integrationStore;
-        this.portFactory = portFactory;
+        this.commercePublisherFactory = commercePublisherFactory;
         this.auditLog = auditLog;
         this.jdbcTemplate = jdbcTemplate;
     }
@@ -56,52 +60,58 @@ public class WooIntegrationController {
 
     @PutMapping
     @PreAuthorize("hasRole('OWNER')")
-    public WooStatus save(CurrentUser user, @Valid @RequestBody SaveWooRequest request) {
+    public WooStatus save(CurrentUser user, @RequestParam(defaultValue = "PRODUCTION")
+            PublishEnvironment environment,
+            @Valid @RequestBody SaveWooRequest request) {
+        String provider = CommercePublisherFactory.providerFor(environment);
         String baseUrl = stripTrailingSlash(request.baseUrl().trim());
         String username = request.username().trim();
-        Optional<StoredIntegration> existing = integrationStore.find(user.tenantId(),
-                CommercePortFactory.PROVIDER);
+        Optional<StoredIntegration> existing = integrationStore.find(user.tenantId(), provider);
         String password = request.applicationPassword();
         if ((password == null || password.isBlank()) && existing.isPresent()) {
             password = integrationStore.credentials(existing.get(), WooCredentials.class)
                     .applicationPassword();
         }
-        String beforeBaseUrl = findStoreBaseUrl(user.tenantId());
-        integrationStore.save(user.tenantId(), CommercePortFactory.PROVIDER, username,
+        String beforeBaseUrl = findStoreBaseUrl(user.tenantId(), provider);
+        integrationStore.save(user.tenantId(), provider, username,
                 new WooCredentials(baseUrl, username, password));
         jdbcTemplate.update(
                 "insert into store (tenant_id, platform, base_url) values (?, ?, ?) "
                         + "on conflict (tenant_id, platform) do update set base_url = excluded.base_url",
-                user.tenantId(), CommercePortFactory.PROVIDER, baseUrl);
+                user.tenantId(), provider, baseUrl);
         auditLog.record(new AuditEntry(user.tenantId(), ActorType.USER,
                 String.valueOf(user.userId()), "INTEGRATION_UPDATED", "integration",
-                CommercePortFactory.PROVIDER, before(user.tenantId(), existing, beforeBaseUrl),
-                after(baseUrl, username), null, null));
+                provider, before(user.tenantId(), existing, beforeBaseUrl),
+                after(baseUrl, username), environment.name(), "WOO"));
         return new WooStatus(baseUrl, username, true,
                 existing.map(StoredIntegration::lastSyncAt).orElse(null));
     }
 
     @GetMapping
     @PreAuthorize("hasRole('OWNER')")
-    public Object status(CurrentUser user) {
-        Optional<StoredIntegration> existing = integrationStore.find(user.tenantId(),
-                CommercePortFactory.PROVIDER);
+    public Object status(CurrentUser user, @RequestParam(defaultValue = "PRODUCTION")
+            PublishEnvironment environment) {
+        String provider = CommercePublisherFactory.providerFor(environment);
+        Optional<StoredIntegration> existing = integrationStore.find(user.tenantId(), provider);
         if (existing.isEmpty()) {
-            return Map.of("configured", false);
+            return Map.of("configured", false, "environment", environment.name());
         }
-        return new WooStatus(findStoreBaseUrl(user.tenantId()), existing.get().accountRef(), true,
-                existing.get().lastSyncAt());
+        return new WooStatus(findStoreBaseUrl(user.tenantId(), provider),
+                existing.get().accountRef(), true, existing.get().lastSyncAt());
     }
 
     @PostMapping("/test")
     @PreAuthorize("hasRole('OWNER')")
-    public Map<String, Object> test(CurrentUser user) {
+    public Map<String, Object> test(CurrentUser user, @RequestParam(defaultValue = "PRODUCTION")
+            PublishEnvironment environment) {
         try {
-            portFactory.forTenant(user.tenantId()).ping();
+            commercePublisherFactory.forEnvironment(user.tenantId(), environment).findBySku("");
             return Map.of("ok", true);
-        } catch (CommerceException ex) {
-            return Map.of("ok", false, "code", ex.code(), "message",
-                    ex.getMessage() == null ? "" : ex.getMessage());
+        } catch (ApiException | CommerceException ex) {
+            return Map.of("ok", false, "code",
+                    ex instanceof ApiException api ? api.getCode()
+                            : ((CommerceException) ex).code(),
+                    "message", ex.getMessage() == null ? "" : ex.getMessage());
         }
     }
 
@@ -123,10 +133,10 @@ public class WooIntegrationController {
         return after;
     }
 
-    private String findStoreBaseUrl(long tenantId) {
+    private String findStoreBaseUrl(long tenantId, String provider) {
         List<String> urls = jdbcTemplate.queryForList(
                 "select base_url from store where tenant_id = ? and platform = ?",
-                String.class, tenantId, CommercePortFactory.PROVIDER);
+                String.class, tenantId, provider);
         return urls.isEmpty() ? null : urls.get(0);
     }
 
