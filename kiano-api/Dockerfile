@@ -1,5 +1,7 @@
 # Multi-stage build: Maven on the JDK, then run on the JRE with ffprobe.
-FROM eclipse-temurin:21-jdk AS build
+# Base tags are pinned to noble (Ubuntu 24.04): the floating 21-jre tag moved
+# to Ubuntu 26.04, which Playwright cannot install browsers on.
+FROM eclipse-temurin:21-jdk-noble AS build
 WORKDIR /build
 COPY mvnw .
 COPY .mvn .mvn
@@ -9,7 +11,7 @@ RUN ./mvnw -q -DskipTests dependency:go-offline || true
 COPY src src
 RUN ./mvnw -q -DskipTests package
 
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:21-jre-noble
 # ffprobe (from ffmpeg) for video QC; tesseract-ocr for template OCR prechecks.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg tesseract-ocr \

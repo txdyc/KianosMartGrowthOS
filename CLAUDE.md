@@ -43,6 +43,7 @@ cd kiano-api && ./mvnw -q test -Dtest=ClassName       # 单个测试类
 cd kiano-web && pnpm dev                              # web，端口 3000
 cd kiano-web && pnpm vitest run && pnpm lint && pnpm build
 docker compose --profile app up -d --build            # 全容器运行
+./scripts/run-worker.ps1                              # kiano-worker，Windows 原生（读 .env 的 KIANO_WORKER_TOKEN，jar 缺失时自动构建）
 ```
 
 本地联调 Woo 时使用 KianosMart 的本地 Docker 环境（`http://localhost:8080`），步骤见 README。
@@ -63,6 +64,14 @@ docker compose --profile app up -d --build            # 全容器运行
 3. 事实表锁定后才能生成文案、信息图和参数图。
 4. 视频中 AI 生成的时长占比 ≤ 30%，超过的视频不进入审核。
 5. 每个物料都记录来源、事实版本、模板或工作流版本、模型和 seed，可追溯、可复现。重新生成总是产生新版本，不覆盖旧版本。
+
+**图片流水线（C2，规格 §4/§5/§12）**
+- kiano-worker 与 ComfyUI 在 Windows 上原生运行，不进 Docker；GPU 任务**单并发**，每个任务记录 `gpu_seconds`。
+- worker 用 bearer token 访问 `/api/v1/worker/**`：api 只存 SHA-256（`KIANO_WORKER_TOKEN_SHA256`），明文只在 `.env`（`scripts/run-worker.ps1` 读取）。
+- ComfyUI 工作流和模型绑定是**数据**（`comfy_workflow` + manifest），注册时校验输出契约与商用许可证白名单（MIT、Apache-2.0、BSD-2/3-Clause、CreativeML-OpenRAIL++-M）；换版本 = 注册 + 激活，不改代码。
+- 白底主图、多角度图、开箱图是确定性合成（Java2D，不过 AI）；抠图（CUTOUT）和场景图（SCENE）走 ComfyUI。
+- 执行器不可用或租约超时：任务转 `WAITING_EXECUTOR`（不增加 attempts），恢复后自动继续；worker 停止 90 秒后其租约同样回收。
+- 预检（precheck）只标记排序和提示，不直接拦截（视频 AI 占比除外）；预检与场景图的阈值在配置里，样板阶段标定。
 
 **安全与许可证**
 - 机密只放在 `.env`（不提交），`.env.example` 记录所有键名。集成凭证用 AES-GCM 加密后入库。凭证不能出现在日志、API 响应或 `audit_log` 中。

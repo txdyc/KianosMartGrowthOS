@@ -42,6 +42,76 @@ cd kiano-api && ./mvnw -q test -Dtest=ClassName   # 单个测试类
 cd kiano-web && pnpm vitest run && pnpm lint && pnpm build
 ```
 
+## 图片流水线与 kiano-worker（C2）
+
+生成商品图需要三样东西同时在线：api（Docker 里的 `--profile app`）、
+ComfyUI（Windows 原生）、kiano-worker（Windows 原生，GPU 任务不进 Docker）。
+
+### 准备（一次性）
+
+1. **worker token**：`.env` 里配一对值，api 只存哈希、worker 拿明文：
+
+   ```powershell
+   # 生成 token 并算出 SHA-256
+   $bytes = New-Object byte[] 32
+   [Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+   $token = [Convert]::ToHexString($bytes).ToLower()
+   $sha = [Security.Cryptography.SHA256]::Create()
+   $hash = [BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($token))).Replace("-", "").ToLower()
+   $token   # -> .env 的 KIANO_WORKER_TOKEN
+   $hash    # -> .env 的 KIANO_WORKER_TOKEN_SHA256
+   ```
+
+   改完 `.env` 重建 api：`docker compose --profile app up -d --force-recreate api`。
+
+2. **ComfyUI**：装在 `D:\ComfyUI`，端口 8188（`cd D:\ComfyUI; .\run_nvidia_gpu.bat`）。
+   基线工作流需要的模型在 manifest 里声明，首次运行由 ComfyUI 下载；
+   许可证必须商用可用（白名单：MIT、Apache-2.0、BSD-2/3-Clause、CreativeML-OpenRAIL++-M，
+   例如 BiRefNet 是 MIT 可以用，BRIA RMBG 非商用不能用）。
+
+3. **tesseract（可选）**：api 容器内已自带，只有本地裸跑 api 才需要装：
+   `winget install UB-Mannheim.TesseractOCR`。
+
+### 启动 worker
+
+```powershell
+.\scripts\run-worker.ps1
+```
+
+脚本从 `.env` 读 `KIANO_WORKER_TOKEN`，jar 不存在时自动构建
+（`cd kiano-api; .\mvnw.cmd -DskipTests package`），然后以 worker profile 启动
+（`-Dloader.main=com.kiano.worker.KianoWorkerApplication`）。
+之后在商品页点“生成商品图”即可；ComfyUI 不可用时任务进入 `WAITING_EXECUTOR`，
+恢复后自动继续，不消耗 attempts。
+
+注意：worker 以 `java -jar` 方式占用 `kiano-api/target/*.jar`，
+**worker 运行期间不能执行 `mvnw verify` / `package`**（Windows 文件锁会让 repackage
+失败）。先停掉 worker 再跑构建。
+
+### 工作流版本管理（OWNER）
+
+基线工作流（CUTOUT / SCENE v1）随代码注册。样板阶段定稿后注册新版本即可替换，不需要改代码：
+
+```powershell
+# 登录拿会话 cookie
+curl.exe -s -c cookie.txt -H "Content-Type: application/json" `
+  -d '{\"email\":\"owner@kiano.local\",\"password\":\"<密码>\"}' `
+  http://localhost:8081/api/v1/auth/login
+
+# 注册新版本（multipart：workflow = ComfyUI API 格式导出，manifest = 绑定与模型清单）
+curl.exe -s -b cookie.txt `
+  -F "workflow=@scene-v2.json;type=application/json" `
+  -F "manifest=@scene-v2-manifest.json;type=application/json" `
+  http://localhost:8081/api/v1/content/workflows
+
+# 激活某个版本
+curl.exe -s -b cookie.txt -X POST http://localhost:8081/api/v1/content/workflows/<id>/activate
+```
+
+注册时校验 manifest 的输出契约和模型许可证白名单，不合规返回 422。
+预检与场景图的各项阈值都在配置里（`kiano.content.qc.*`、工作流参数），
+在样板阶段标定，不写死在代码里。
+
 ## 连接 KianosMart 本地 WooCommerce
 
 店铺基础设施在另一仓库 `D:\GHANA\claude\KianosMart`（本地 Woo 在 `http://localhost:8080`）。

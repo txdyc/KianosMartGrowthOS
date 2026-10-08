@@ -35,6 +35,9 @@ services:
       # browser-facing public endpoint stays on localhost.
       KIANO_DB_URL: jdbc:postgresql://postgres:5432/kiano?stringtype=unspecified
       KIANO_STORAGE_ENDPOINT: http://minio:9000
+      # SHA-256 hex of the native worker's token. The plain token stays in .env
+      # and is only read by scripts/run-worker.ps1 on the host.
+      KIANO_WORKER_TOKEN_SHA256: ${KIANO_WORKER_TOKEN_SHA256:-}
     ports:
       - "8081:8081"
     depends_on:
