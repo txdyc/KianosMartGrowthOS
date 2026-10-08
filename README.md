@@ -145,6 +145,59 @@ Base URL 取决于 api 在哪里运行：
 `WooCommerce is unavailable after 3 attempts: I/O error ...`。商品图片地址仍是 Woo 生成的
 `http://localhost:8080/...`，浏览器可以正常访问。
 
+## 发布到 WooCommerce（C3）
+
+### LLM 配置与成本
+
+- API key 只来自环境变量 `ANTHROPIC_API_KEY`（`.env`），**不入库**。api 容器通过
+  `docker-compose.yml` 透传；本地开发直接读 `.env`。
+- 模型默认 `claude-opus-5-5`（配置 `kiano.llm.model`），基于
+  `anthropic-java` SDK，启用服务端拒答回退。Opus 5.5 的 thinking 不能关闭。
+- 每次调用都写一行 `llm_call`。查询成本：
+
+  ```sql
+  select purpose, count(*), round(sum(cost_usd), 4) as cost_usd
+  from llm_call group by 1 order by 2 desc;
+  ```
+
+### 操作顺序（一个 SKU）
+
+1. **事实**：商品页 → Facts → “AI 生成草稿”（Claude 看 P5 铭牌照和 PROMO 宣传图），
+   人工核对每个字段的来源徽标，勾选 6 项确认后**锁定**。
+2. **文案与制图**：锁定会归档旧文案并自动生成 6 种文案（标题、短/长描述、SEO、
+   Google Shopping、WhatsApp）、PAGE_INFO 信息图与 PAGE_SPEC 参数图，全部进入审核看板
+   （`/review`，支持 E 编辑文本）。
+3. **审核**：逐一通过；预检标记（FACT_MISMATCH 等）会显示在卡片上。
+4. **店铺政策**：设置 → 店铺政策（OWNER）填写 5 个分区。未填完整时文案照常生成和
+   审核，但**不允许发布**。
+5. **发布**：商品页 → 发布 → 先 **Staging**（成功后再能点生产），然后**生产**
+   （仅 OWNER）。发布前自动检查前置条件。
+
+### Staging 配置（本地 Docker 店铺）
+
+1. 本地 Woo 店铺（KianosMart 仓库）里创建 Application Password（Shop Manager 用户），
+   步骤同上面“连接 KianosMart 本地 WooCommerce”，Base URL 填
+   `http://host.docker.internal:8080`。
+2. 设置 → 集成 → Staging 区块填入并测试连接。
+3. 生产区块填真实站的凭据。
+
+### 生产发布前的检查清单
+
+1. 生产环境的 Shop Manager Application Password 由用户在 WordPress 后台创建，
+   只在设置页中输入，不写进任何文件。
+2. Cloudflare 的 WAF 要对 Kiano 服务器的 IP 放行 `/wp-json/wc/` 和
+   `/wp-json/wp/v2/media`。
+3. 生产站已启用 Rank Math（写入 `rank_math_title` / `rank_math_description`）。
+
+### 回滚
+
+- 每次发布先保存商品快照；中途失败自动按快照恢复并删除本次上传的媒体，publication
+  记为 FAILED；若恢复也失败会标记 `needsAttention`（界面红色提示）。
+- 发布后手动回滚：发布历史里点“回滚”。如果 Woo 后台在这之后改过该商品，需要
+  二次确认“强制回滚”（`WOO_CHANGED_SINCE_PUBLISH`）。
+- 政策或事实变更后，长描述自动重渲染（政策变更不调用 LLM），商品进入
+  “需要重新发布”列表（顶部导航徽标可见）。
+
 ## 文档
 
 - `docs/Kiano Growth OS 产品需求与技术架构设计 v1.2.md`：当前架构

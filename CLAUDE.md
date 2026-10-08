@@ -79,6 +79,14 @@ docker compose --profile app up -d --build            # 全容器运行
 - 模型、字体、音乐必须允许商用（例如 BRIA RMBG 是非商用许可，不能用；BiRefNet 是 MIT 许可）。许可证记录在 `comfy_workflow.model_refs` 中。字体只用 OFL 许可。
 - 发布到 Woo 必须先在 staging 验证，再上生产（KianosMart 仓库的规则）。
 
+**C3 内容生成与发布（facts → copy → publish）**
+- LLM 出口统一走 `platform/llm` 的 `LlmGateway`（anthropic-java，默认 `claude-opus-5-5`），每次调用写 `llm_call`（含 `cost_usd`）。API key 只来自 `ANTHROPIC_API_KEY`，不入库。
+- Opus 5.5 不能关闭 thinking（不发 `ThinkingConfigDisabled` / `budgetTokens`）；拒绝（refusal）不可重试，`max_tokens` 截断可重试一次（`maxTokens` 翻倍）。
+- **LLM 输出必须转义**：模板只用 JMustache `{{ }}`，禁止 `{{{ }}}`；LLM 只产纯文本片段，参数表/政策块/HTML 结构由模板确定性渲染。Woo 的 `name` 与 Rank Math meta 写纯文本，`description` 用转义后的 HTML。
+- 事实先锁定（G2，6 项确认）再生成文案/INFO/SPEC；锁定新版本时旧版本按 DRAFT/IN_REVIEW/APPROVED→ARCHIVED、PUBLISHED→STALE 处理。
+- 政策文本只来自设置页（5 个分区）；政策未填完整时文案可生成和审核，但发布返回 `POLICY_INCOMPLETE`。
+- 发布写入（CommercePublisher）保存快照后可回滚；生产发布必须同商品同资产集已在 staging APPLIED（否则 409 `STAGING_REQUIRED`）；回滚检测 Woo 侧修改（`WOO_CHANGED_SINCE_PUBLISH`，除非 `force`）。
+
 **跨仓库**
 - kiano-connector 插件放在 KianosMart 仓库的 `wp-content/plugins/kiano-connector/`，按那个仓库的规则添加 bind mount。
 - 不修改 WordPress 核心和第三方插件。本地 Woo 的配置（例如 `WP_ENVIRONMENT_TYPE=local`）用 WP-CLI 写进本地 volume，不改 KianosMart 仓库的文件。

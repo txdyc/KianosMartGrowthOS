@@ -38,6 +38,8 @@ services:
       # SHA-256 hex of the native worker's token. The plain token stays in .env
       # and is only read by scripts/run-worker.ps1 on the host.
       KIANO_WORKER_TOKEN_SHA256: ${KIANO_WORKER_TOKEN_SHA256:-}
+      # Claude API key for the LLM gateway (C3); passed through from .env.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     ports:
       - "8081:8081"
     depends_on:
