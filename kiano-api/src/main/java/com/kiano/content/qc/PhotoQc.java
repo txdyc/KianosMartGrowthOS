@@ -133,7 +133,29 @@ public class PhotoQc {
         double pixels = width * height;
         double overRatio = pixels == 0 ? 0 : over / pixels;
         double underRatio = pixels == 0 ? 0 : under / pixels;
+        return new Metrics(blurVariance(gray, width, height), overRatio, underRatio);
+    }
 
+    /**
+     * Laplacian variance of an already-sub-sampled image: higher means a
+     * sharper image. Public so the ad demo {@code FrameExtractor} can rank
+     * candidate frames by the same sharpness metric the QC uses.
+     */
+    public static double blurVariance(BufferedImage image) {
+        int width = image.getWidth();
+        int height = image.getHeight();
+        double[] gray = new double[width * height];
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int rgb = image.getRGB(x, y);
+                gray[y * width + x] = 0.299 * ((rgb >> 16) & 0xFF)
+                        + 0.587 * ((rgb >> 8) & 0xFF) + 0.114 * (rgb & 0xFF);
+            }
+        }
+        return blurVariance(gray, width, height);
+    }
+
+    private static double blurVariance(double[] gray, int width, int height) {
         double sum = 0;
         double sumSquares = 0;
         long count = 0;
@@ -147,8 +169,7 @@ public class PhotoQc {
                 count++;
             }
         }
-        double blurVariance = count == 0 ? 0 : sumSquares / count - (sum / count) * (sum / count);
-        return new Metrics(blurVariance, overRatio, underRatio);
+        return count == 0 ? 0 : sumSquares / count - (sum / count) * (sum / count);
     }
 
     /**
