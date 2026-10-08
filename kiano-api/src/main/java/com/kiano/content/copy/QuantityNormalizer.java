@@ -20,15 +20,18 @@ public final class QuantityNormalizer {
     public record Quantity(BigDecimal value, String unit) {
     }
 
+    private static final String UNIT =
+            "(litres?|liters?|ml|watts?|kW|volts?|Hz|inch(?:es)?|cm|kg|months?|mo|years?|year|L|l|W|V|in|\")";
+
+    /** A unit must end the word: "3 lids", "4 modes", "6 wheels" are not quantities. */
+    private static final String UNIT_END = "(?!\\p{L})";
+
     private static final Pattern RANGE = Pattern.compile(
-            "(\\d+(?:\\.\\d+)?)\\s*(?:-|–|—|to)\\s*(\\d+(?:\\.\\d+)?)\\s*"
-                    + "(litres?|liters?|ml|watts?|kW|volts?|Hz|inches?|cm|kg|months?|mo|years?|year|L|l|W|V|in|\")",
+            "(\\d+(?:\\.\\d+)?)\\s*(?:-|–|—|to)\\s*(\\d+(?:\\.\\d+)?)\\s*" + UNIT + UNIT_END,
             Pattern.CASE_INSENSITIVE);
 
     private static final Pattern SINGLE = Pattern.compile(
-            "(\\d+(?:\\.\\d+)?)\\s*(?:-|–)?\\s*"
-                    + "(litres?|liters?|ml|watts?|kW|volts?|Hz|inches?|cm|kg|months?|mo|years?|year|L|l|W|V|in|\")"
-                    + "(?!\\s*\\d)",
+            "(\\d+(?:\\.\\d+)?)\\s*(?:-|–)?\\s*" + UNIT + UNIT_END + "(?!\\s*\\d)",
             Pattern.CASE_INSENSITIVE);
 
     private QuantityNormalizer() {

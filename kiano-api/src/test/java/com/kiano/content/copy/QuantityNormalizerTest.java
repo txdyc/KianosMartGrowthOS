@@ -8,6 +8,7 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * QuantityNormalizer (Review Focus 3): unit normalisation, ml/kW/year
@@ -59,6 +60,23 @@ class QuantityNormalizerTest {
     void bareNumbers_ignored() {
         assertThat(QuantityNormalizer.extract("2 in 1 blender with 3 speeds"))
                 .isEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"comes with 3 lids", "4 modes", "store 2 inside", "6 wheels",
+            "2 layers of protection", "5 levels", "10 velocity settings", "3 colours"})
+    void unitLetters_atStartOfAWord_areNotUnits(String text) {
+        assertThat(QuantityNormalizer.extract(text)).isEmpty();
+    }
+
+    @Test
+    void unitFollowedByPunctuationOrEnd_stillMatches() {
+        assertThat(QuantityNormalizer.extract("A 1.5L. jar, 350W) motor, 12\" fan, 2kg"))
+                .containsExactlyInAnyOrder(
+                        new Quantity(new BigDecimal("1.5"), "L"),
+                        new Quantity(new BigDecimal("350"), "W"),
+                        new Quantity(new BigDecimal("12"), "in"),
+                        new Quantity(new BigDecimal("2"), "kg"));
     }
 
     @Test
