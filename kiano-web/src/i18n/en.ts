@@ -6,6 +6,7 @@ export const en = {
   // navigation
   "nav.products": "Products",
   "nav.import": "Import",
+  "nav.review": "Review",
   "nav.reshoot": "Reshoot list",
   "nav.settings": "Settings",
   "nav.logout": "Logout",
@@ -101,6 +102,27 @@ export const en = {
   "pipeline.retry": "Retry",
   "pipeline.attempts": "{n}/{m} attempts",
   "pipeline.reviewLink": "Review ({n} pending)",
+
+  // image review board
+  "review.empty": "No images waiting for review.",
+  "review.hint": "Keyboard: ← → ↑ ↓ move focus · A approve · R reject · G regenerate",
+  "review.sourcePhoto": "Source photo",
+  "review.approveRemaining": "Approve remaining for this SKU",
+  "review.confirmApproveRemaining": "Approve all {n} remaining images of this SKU?",
+  "review.confirmGo": "Approve",
+  "review.cancel": "Cancel",
+  "review.rejectTitle": "Reject image",
+  "review.rejectReasons": "Reasons (at least one)",
+  "review.comment": "Comment (optional)",
+  "review.rejectSubmit": "Reject",
+
+  // AssetSpec.code (asset_spec table)
+  "spec.PAGE_MAIN": "Main",
+  "spec.PAGE_ANGLE": "Angle",
+  "spec.PAGE_SCENE": "Scene",
+  "spec.PAGE_INBOX": "In the box",
+  "spec.PAGE_INFO": "Info",
+  "spec.PAGE_SPEC": "Specs",
 
   // import
   "import.summary": "Imported {n} files",

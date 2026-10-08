@@ -8,6 +8,7 @@ export const zh: Record<MessageKey, string> = {
   // navigation
   "nav.products": "商品",
   "nav.import": "导入",
+  "nav.review": "审核",
   "nav.reshoot": "补拍清单",
   "nav.settings": "设置",
   "nav.logout": "退出登录",
@@ -103,6 +104,27 @@ export const zh: Record<MessageKey, string> = {
   "pipeline.retry": "重试",
   "pipeline.attempts": "尝试 {n}/{m}",
   "pipeline.reviewLink": "去审核（{n} 张待审）",
+
+  // image review board
+  "review.empty": "没有待审核的图片。",
+  "review.hint": "键盘：← → ↑ ↓ 移动焦点 · A 通过 · R 驳回 · G 重新生成",
+  "review.sourcePhoto": "实拍原图",
+  "review.approveRemaining": "本 SKU 剩余全部通过",
+  "review.confirmApproveRemaining": "通过本 SKU 剩余的 {n} 张图片？",
+  "review.confirmGo": "确认通过",
+  "review.cancel": "取消",
+  "review.rejectTitle": "驳回图片",
+  "review.rejectReasons": "驳回原因（至少选一个）",
+  "review.comment": "备注（可选）",
+  "review.rejectSubmit": "驳回",
+
+  // AssetSpec.code (asset_spec table)
+  "spec.PAGE_MAIN": "主图",
+  "spec.PAGE_ANGLE": "角度图",
+  "spec.PAGE_SCENE": "场景图",
+  "spec.PAGE_INBOX": "开箱图",
+  "spec.PAGE_INFO": "信息图",
+  "spec.PAGE_SPEC": "参数图",
 
   // import
   "import.summary": "已导入 {n} 个文件",

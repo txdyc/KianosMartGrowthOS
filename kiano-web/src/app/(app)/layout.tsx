@@ -8,7 +8,7 @@ import { apiFetch } from "@/lib/api";
 import { MeProvider, isOwner, type Me } from "@/lib/me";
 import { LocaleSwitch, useI18n } from "@/i18n";
 
-type NavHref = "/products" | "/import" | "/reshoot" | "/settings/integrations";
+type NavHref = "/products" | "/import" | "/review" | "/reshoot" | "/settings/integrations";
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const { t } = useI18n();
@@ -25,6 +25,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const links: { href: NavHref; label: string }[] = [
     { href: "/products", label: t("nav.products") },
     { href: "/import", label: t("nav.import") },
+    { href: "/review", label: t("nav.review") },
     { href: "/reshoot", label: t("nav.reshoot") },
   ];
   if (me !== null && isOwner(me.role)) {
