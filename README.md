@@ -147,15 +147,27 @@ Base URL 取决于 api 在哪里运行：
 
 ## 发布到 WooCommerce（C3）
 
-### LLM 配置与成本
+### LLM 配置与成本（可配置提供商，2026-10-08 起）
 
-- API key 只来自环境变量 `ANTHROPIC_API_KEY`（`.env`），**不入库**。api 容器通过
-  `docker-compose.yml` 透传；本地开发直接读 `.env`。
-- 模型默认 `claude-opus-5-5`（配置 `kiano.llm.model`），基于
-  `anthropic-java` SDK，启用服务端拒答回退。Opus 5.5 的 thinking 不能关闭。
-- 每次调用都写一行 `llm_call`。查询成本：
+- **默认路由**：没有设置路由的任务继续用 `.env` 的 `ANTHROPIC_API_KEY`（只读环境变量，
+  **不入库**）和模型 `claude-opus-5-5`（Anthropic，支持看图，可服务端拒答回退）。
+- **自定义提供商**：以 OWNER 登录后进入 **设置 → AI 模型（`/settings/llm`）**，可新增
+  Anthropic 或 OpenAI 兼容提供商（预设含 DeepSeek），并分别选择“事实草稿”（必须能看图）
+  和“文案”的提供商与模型。提供商 key 用 AES-GCM 加密入库；页面上 key 输入框留空表示
+  保留已存的 key。改完立即生效。
+- **DeepSeek 示例**：设置页用 **DeepSeek 预设**新增提供商（页面填入 key，Base URL
+  自动带出 `https://api.deepseek.com`）。在“任务路由 → 文案”行选择该提供商、
+  模型选 `deepseek-flash`（看图/价格自动带出），然后点**测试连接**验证；事实草稿行选择
+  `deepseek-v4-pro` 时不支持看图，会被拒绝保存。
+- 预设价格取 **DeepSeek 高峰价**（DeepSeek 按峰谷时段计价，这里用保守的高峰价，不入库）。
+- 每次调用都写一行 `llm_call`（含 `provider` 列：`ANTHROPIC` 或
+  `OPENAI_COMPATIBLE:{name}`）。查询成本：
 
   ```sql
+  -- 按提供商与用途汇总
+  select provider, purpose, round(sum(cost_usd), 4) as cost_usd
+  from llm_call group by 1, 2 order by 3 desc;
+
   select purpose, count(*), round(sum(cost_usd), 4) as cost_usd
   from llm_call group by 1 order by 2 desc;
   ```

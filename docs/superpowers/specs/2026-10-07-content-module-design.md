@@ -395,7 +395,7 @@ C6 之后：Kiano 核心迁移到 VPS，笔记本保留 kiano-worker；然后按
 ## 15. 待确认事项
 
 1. MiniMax H3 API 的访问方式、配额和单价（用于 `cost_usd` 和预算）。
-2. ~~文案和事实草稿使用的 LLM 提供商~~ → **已确认（2026-10-08）：Claude API**（默认 `claude-opus-5-5`，经 LlmGateway 接入并记录成本）。
+2. ~~文案和事实草稿使用的 LLM 提供商~~ → **已确认（2026-10-08）：LLM 提供商可配置**（Anthropic / OpenAI 兼容，如 DeepSeek），按任务路由，没有配置的任务用 `.env` 的 Claude 默认，默认模型 `claude-opus-5-5`，经 LlmGateway 接入并记录成本；细节见 `docs/superpowers/specs/2026-10-08-llm-provider-routing-design.md`。
 3. ~~站点使用的 SEO 插件~~ → **已确认（2026-10-08）：Rank Math**（发布时写 `rank_math_title` / `rank_math_description`）。
 4. ~~staging 环境~~ → **已确认（2026-10-08）：KianosMart 本地 Docker**；生产发布前必须先在 staging 发布成功。
 5. 免版税曲库和商用字体的选择。

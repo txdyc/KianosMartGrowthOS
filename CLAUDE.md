@@ -80,8 +80,9 @@ docker compose --profile app up -d --build            # 全容器运行
 - 发布到 Woo 必须先在 staging 验证，再上生产（KianosMart 仓库的规则）。
 
 **C3 内容生成与发布（facts → copy → publish）**
-- LLM 出口统一走 `platform/llm` 的 `LlmGateway`（anthropic-java，默认 `claude-opus-5-5`），每次调用写 `llm_call`（含 `cost_usd`）。API key 只来自 `ANTHROPIC_API_KEY`，不入库。
-- Opus 5.5 不能关闭 thinking（不发 `ThinkingConfigDisabled` / `budgetTokens`）；拒绝（refusal）不可重试，`max_tokens` 截断可重试一次（`maxTokens` 翻倍）。
+- LLM 出口统一走 `platform/llm` 的 `LlmGateway`（唯一的实现是 `RoutingLlmGateway`：按 `LlmRequest.purpose` 解析 `llm_route`，未配置的用途用 `.env` 的 Claude 默认，默认模型 `claude-opus-5-5`），每次调用写 `llm_call`（含 `cost_usd` 与 `provider`）。提供商 key 只以 `CredentialCipher` 密文入库（`llm_provider`）；API 响应、`audit_log` 和错误信息中都不能出现明文 key。
+- Opus 5.5 不能关闭 thinking（不发 `ThinkingConfigDisabled` / `budgetTokens`）——**仅适用于 Anthropic 适配器**；OpenAI 兼容提供商的输出必须经过本地 JSON Schema 生成与校验（`OutputSchemas` / `OutputValidator`，不合格重试一次）；拒绝（refusal）与截断（max_tokens）不可重试。
+- FACT_DRAFT 路由必须支持看图（保存时 422 `ROUTE_REQUIRES_VISION`，调用时再检查一次 `LLM_MODEL_NO_VISION`）。
 - **LLM 输出必须转义**：模板只用 JMustache `{{ }}`，禁止 `{{{ }}}`；LLM 只产纯文本片段，参数表/政策块/HTML 结构由模板确定性渲染。Woo 的 `name` 与 Rank Math meta 写纯文本，`description` 用转义后的 HTML。
 - 事实先锁定（G2，6 项确认）再生成文案/INFO/SPEC；锁定新版本时旧版本按 DRAFT/IN_REVIEW/APPROVED→ARCHIVED、PUBLISHED→STALE 处理。
 - 政策文本只来自设置页（5 个分区）；政策未填完整时文案可生成和审核，但发布返回 `POLICY_INCOMPLETE`。
