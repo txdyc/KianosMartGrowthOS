@@ -6,6 +6,7 @@ import { apiFetch, ApiError } from "@/lib/api";
 import { errorText, pickGuidance, useI18n } from "@/i18n";
 import { PipelinePanel } from "@/components/PipelinePanel";
 import { FactsPanel } from "@/components/FactsPanel";
+import { PublishPanel } from "@/components/PublishPanel";
 import type { ProductShotStatus, ShotStatusLine } from "@/lib/types";
 
 export default function ProductDetailPage({ params }: PageProps<"/products/[id]">) {
@@ -97,7 +98,10 @@ export default function ProductDetailPage({ params }: PageProps<"/products/[id]"
             ))}
           </div>
         </div>
-        <FactsPanel productId={status.productId} />
+        <div className="flex flex-col gap-4">
+          <FactsPanel productId={status.productId} />
+          <PublishPanel productId={status.productId} />
+        </div>
       </div>
     </div>
   );

@@ -10,10 +10,17 @@ import type { WooStatus } from "@/lib/types";
 const inputClass =
   "w-full max-w-xl rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-zinc-400";
 
-export default function IntegrationsPage() {
-  const { t } = useI18n();
-  const me = useMe();
+type Env = "PRODUCTION" | "STAGING";
 
+/** One Woo environment block: local state per form, shared on save/test. */
+function EnvForm({
+  env,
+  member,
+}: {
+  env: Env;
+  member: boolean;
+}) {
+  const { t } = useI18n();
   const [status, setStatus] = useState<WooStatus | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [baseUrl, setBaseUrl] = useState("");
@@ -24,21 +31,26 @@ export default function IntegrationsPage() {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [forbidden, setForbidden] = useState(false);
 
   const load = useCallback(() => {
-    return apiFetch<WooStatus>("/api/v1/integrations/woocommerce")
+    return apiFetch<WooStatus>(`/api/v1/integrations/woocommerce?environment=${env}`)
       .then((res) => {
         setStatus(res);
         setBaseUrl(res.baseUrl ?? "");
         setUsername(res.username ?? "");
       })
       .catch((err: unknown) => {
-        setError(err instanceof ApiError ? errorText(t, err) : t("error.INTERNAL_ERROR"));
+        if (err instanceof ApiError && err.code === "FORBIDDEN") {
+          setForbidden(true);
+        } else {
+          setError(err instanceof ApiError ? errorText(t, err) : t("error.INTERNAL_ERROR"));
+        }
       })
       .finally(() => {
         setLoaded(true);
       });
-  }, [t]);
+  }, [env, t]);
 
   useEffect(() => {
     load();
@@ -50,7 +62,7 @@ export default function IntegrationsPage() {
     setError(null);
     setSaved(false);
     try {
-      const res = await apiFetch<WooStatus>("/api/v1/integrations/woocommerce", {
+      const res = await apiFetch<WooStatus>(`/api/v1/integrations/woocommerce?environment=${env}`, {
         method: "PUT",
         body: {
           baseUrl: baseUrl.trim(),
@@ -76,7 +88,7 @@ export default function IntegrationsPage() {
     try {
       // Tests the stored credentials, so save before testing.
       const res = await apiFetch<{ ok: boolean; code?: string; message?: string }>(
-        "/api/v1/integrations/woocommerce/test",
+        `/api/v1/integrations/woocommerce/test?environment=${env}`,
         { method: "POST" },
       );
       if (res.ok) {
@@ -92,11 +104,11 @@ export default function IntegrationsPage() {
     }
   }
 
-  if (me === null || !loaded) {
+  if (!loaded) {
     return <p className="text-sm text-zinc-500">{t("loading")}</p>;
   }
 
-  if (!isOwner(me.role)) {
+  if (!member || forbidden) {
     return (
       <p className="text-sm text-red-600 dark:text-red-400" role="alert">
         {t("error.FORBIDDEN")}
@@ -105,17 +117,26 @@ export default function IntegrationsPage() {
   }
 
   return (
-    <div className="flex max-w-2xl flex-col gap-6">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-        <h1 className="text-2xl font-semibold tracking-tight">{t("settings.heading")}</h1>
+    <section className="flex flex-col gap-3 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="text-lg font-semibold">{t(`settings.env.${env}`)}</h2>
+        {env === "STAGING" ? (
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">
+            {t("settings.stagingHint")}
+          </span>
+        ) : (
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">
+            {t("settings.productionHint")}
+          </span>
+        )}
         {status?.lastSyncAt != null ? (
-          <span className="text-zinc-500 dark:text-zinc-400">
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">
             {t("sync.last")}: {new Date(status.lastSyncAt).toLocaleString()}
           </span>
         ) : null}
       </div>
 
-      <form onSubmit={save} className="flex flex-col gap-4">
+      <form onSubmit={save} className="flex flex-col gap-3">
         <label className="flex flex-col gap-1 text-sm">
           {t("settings.baseUrl")}
           <input
@@ -123,7 +144,7 @@ export default function IntegrationsPage() {
             required
             value={baseUrl}
             onChange={(e) => setBaseUrl(e.target.value)}
-            placeholder="https://example.com"
+            placeholder={env === "STAGING" ? "http://host.docker.internal:8080" : "https://example.com"}
             className={inputClass}
           />
         </label>
@@ -189,8 +210,34 @@ export default function IntegrationsPage() {
           {error}
         </p>
       ) : null}
+    </section>
+  );
+}
 
-      <p className="text-sm text-zinc-600 dark:text-zinc-400">{t("settings.guide")}</p>
+export default function IntegrationsPage() {
+  const { t } = useI18n();
+  const me = useMe();
+
+  if (me === null) {
+    return <p className="text-sm text-zinc-500">{t("loading")}</p>;
+  }
+
+  if (!isOwner(me.role)) {
+    return (
+      <p className="text-sm text-red-600 dark:text-red-400" role="alert">
+        {t("error.FORBIDDEN")}
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex max-w-2xl flex-col gap-6">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">{t("settings.heading")}</h1>
+        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">{t("settings.guide")}</p>
+      </div>
+      <EnvForm env="PRODUCTION" member={isOwner(me.role)} />
+      <EnvForm env="STAGING" member={isOwner(me.role)} />
     </div>
   );
 }

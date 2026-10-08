@@ -250,3 +250,27 @@ export interface FactSheetResponse {
   locked?: FactSheetView;
   sources: Record<string, { id: number; url: string }>;
 }
+
+/** One row of GET /api/v1/content/products/{id}/publications. */
+export interface PublicationView {
+  id: number;
+  productId: number;
+  sku: string | null;
+  productName: string | null;
+  environment: "STAGING" | "PRODUCTION";
+  status: string;
+  needsAttention: boolean;
+  error: string | null;
+  assetIds: number[];
+  publishedAt: string | null;
+  publishedBy: string | null;
+  canRollback: boolean;
+}
+
+/** One row of GET /api/v1/content/publications/needs-republish. */
+export interface NeedsRepublishItem {
+  productId: number;
+  sku: string | null;
+  productName: string | null;
+  reasons: Array<"POLICY_CHANGED" | "FACTS_CHANGED">;
+}

@@ -7,13 +7,21 @@ import { usePathname } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { MeProvider, isOwner, type Me } from "@/lib/me";
 import { LocaleSwitch, useI18n } from "@/i18n";
+import type { NeedsRepublishItem } from "@/lib/types";
 
-type NavHref = "/products" | "/import" | "/review" | "/reshoot" | "/settings/integrations";
+type NavHref =
+  | "/products"
+  | "/import"
+  | "/review"
+  | "/reshoot"
+  | "/settings/integrations"
+  | "/settings/policy";
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const { t } = useI18n();
   const pathname = usePathname();
   const [me, setMe] = useState<Me | null>(null);
+  const [needsRepublish, setNeedsRepublish] = useState(0);
 
   // apiFetch already redirects to /login when /me returns 401.
   useEffect(() => {
@@ -21,6 +29,16 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       .then(setMe)
       .catch(() => {});
   }, []);
+
+  // How many products wait for a re-publish; hidden when zero.
+  useEffect(() => {
+    if (pathname.startsWith("/products")) {
+      return; // the products list could show it; keep the nav simple here
+    }
+    apiFetch<NeedsRepublishItem[]>("/api/v1/content/publications/needs-republish")
+      .then((rows) => setNeedsRepublish(rows.length))
+      .catch(() => {});
+  }, [pathname]);
 
   const links: { href: NavHref; label: string }[] = [
     { href: "/products", label: t("nav.products") },
@@ -30,6 +48,19 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   ];
   if (me !== null && isOwner(me.role)) {
     links.push({ href: "/settings/integrations", label: t("nav.settings") });
+    links.push({ href: "/settings/policy", label: t("nav.policy") });
+  }
+
+  // needs-republish badge goes right after the products link.
+  const renderLinks: { href: string; label: string }[] = [];
+  for (const link of links) {
+    renderLinks.push(link);
+    if (link.href === "/products" && needsRepublish > 0) {
+      renderLinks.push({
+        href: "/needs-republish",
+        label: t("publish.needsRepublish", { n: needsRepublish }),
+      });
+    }
   }
 
   async function logout() {
@@ -47,7 +78,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
         <nav className="mx-auto flex h-14 w-full max-w-6xl items-center gap-6 px-4">
           <span className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">KianosMart</span>
-          {links.map((item) => {
+          {renderLinks.map((item) => {
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
               <Link
