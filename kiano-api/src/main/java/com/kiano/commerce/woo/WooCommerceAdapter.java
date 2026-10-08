@@ -257,7 +257,9 @@ public class WooCommerceAdapter implements CommercePort {
                 textOrNull(node, "permalink"),
                 imageUrl(node),
                 modifiedAt(node),
-                categoryExternalIds(node));
+                categoryExternalIds(node),
+                saleDate(node, "date_on_sale_from_gmt"),
+                saleDate(node, "date_on_sale_to_gmt"));
     }
 
     private static Long parentExternalId(JsonNode node) {
@@ -307,6 +309,13 @@ public class WooCommerceAdapter implements CommercePort {
 
     private static Instant modifiedAt(JsonNode node) {
         String raw = node.path("date_modified_gmt").asText(null);
+        return raw == null || raw.isBlank() ? null
+                : LocalDateTime.parse(raw).toInstant(ZoneOffset.UTC);
+    }
+
+    /** Woo promotion window, e.g. date_on_sale_to_gmt; blank/null maps to null. */
+    private static Instant saleDate(JsonNode node, String field) {
+        String raw = node.path(field).asText(null);
         return raw == null || raw.isBlank() ? null
                 : LocalDateTime.parse(raw).toInstant(ZoneOffset.UTC);
     }

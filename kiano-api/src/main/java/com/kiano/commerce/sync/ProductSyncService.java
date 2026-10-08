@@ -142,10 +142,13 @@ public class ProductSyncService {
     private Map<Long, ExistingProduct> loadExisting(long tenantId) {
         Map<Long, ExistingProduct> existing = new HashMap<>();
         jdbcTemplate.query(
-                "select external_id, regular_price, sale_price from product where tenant_id = ?",
+                "select external_id, regular_price, sale_price, sale_to_at "
+                        + "from product where tenant_id = ?",
                 rs -> {
                     existing.put(rs.getLong("external_id"), new ExistingProduct(
-                            rs.getBigDecimal("regular_price"), rs.getBigDecimal("sale_price")));
+                            rs.getBigDecimal("regular_price"), rs.getBigDecimal("sale_price"),
+                            rs.getTimestamp("sale_to_at") == null ? null
+                                    : rs.getTimestamp("sale_to_at").toInstant()));
                 },
                 tenantId);
         return existing;
@@ -156,8 +159,9 @@ public class ProductSyncService {
         List<Long> ids = jdbcTemplate.queryForList(
                 "insert into product (tenant_id, store_id, external_id, parent_external_id, parent_id, "
                         + "type, sku, brand, name, slug, regular_price, sale_price, price, stock_qty, "
-                        + "stock_status, status, permalink, image_url, woo_modified_at, synced_at) "
-                        + "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now()) "
+                        + "stock_status, status, permalink, image_url, sale_from_at, sale_to_at, "
+                        + "woo_modified_at, synced_at) "
+                        + "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now()) "
                         + "on conflict (tenant_id, external_id) do update set "
                         + "store_id = excluded.store_id, "
                         + "parent_external_id = excluded.parent_external_id, parent_id = excluded.parent_id, "
@@ -167,6 +171,7 @@ public class ProductSyncService {
                         + "price = excluded.price, stock_qty = excluded.stock_qty, "
                         + "stock_status = excluded.stock_status, status = excluded.status, "
                         + "permalink = excluded.permalink, image_url = excluded.image_url, "
+                        + "sale_from_at = excluded.sale_from_at, sale_to_at = excluded.sale_to_at, "
                         + "woo_modified_at = excluded.woo_modified_at, synced_at = excluded.synced_at "
                         + "returning id",
                 Long.class,
@@ -174,6 +179,8 @@ public class ProductSyncService {
                 product.type(), product.sku(), product.brand(), product.name(), product.slug(),
                 product.regularPrice(), product.salePrice(), product.price(), product.stockQty(),
                 product.stockStatus(), product.status(), product.permalink(), product.imageUrl(),
+                product.saleFromAt() == null ? null : Timestamp.from(product.saleFromAt()),
+                product.saleToAt() == null ? null : Timestamp.from(product.saleToAt()),
                 product.modifiedAt() == null ? null : Timestamp.from(product.modifiedAt()));
         return ids.get(0);
     }
@@ -198,7 +205,8 @@ public class ProductSyncService {
 
     private static boolean priceChanged(ExistingProduct existing, CommerceProduct incoming) {
         return !moneyEquals(existing.regularPrice(), incoming.regularPrice())
-                || !moneyEquals(existing.salePrice(), incoming.salePrice());
+                || !moneyEquals(existing.salePrice(), incoming.salePrice())
+                || !instantEquals(existing.saleToAt(), incoming.saleToAt());
     }
 
     private static boolean moneyEquals(BigDecimal a, BigDecimal b) {
@@ -208,20 +216,29 @@ public class ProductSyncService {
         return a.compareTo(b) == 0;
     }
 
+    private static boolean instantEquals(Instant a, Instant b) {
+        if (a == null || b == null) {
+            return a == b;
+        }
+        return a.equals(b);
+    }
+
     private void recordPriceChange(long tenantId, long productId, ExistingProduct existing,
             CommerceProduct product) {
         Map<String, Object> before = new LinkedHashMap<>();
         before.put("regularPrice", existing.regularPrice());
         before.put("salePrice", existing.salePrice());
+        before.put("saleToAt", existing.saleToAt());
         Map<String, Object> after = new LinkedHashMap<>();
         after.put("regularPrice", product.regularPrice());
         after.put("salePrice", product.salePrice());
+        after.put("saleToAt", product.saleToAt());
         auditLog.record(new AuditEntry(tenantId, ActorType.SYSTEM, "SYSTEM",
                 "PRODUCT_PRICE_CHANGED", "product", String.valueOf(productId), before, after,
                 null, "WOO_SYNC"));
         events.publishEvent(new ProductPriceChanged(tenantId, productId, product.sku(),
                 existing.regularPrice(), product.regularPrice(), existing.salePrice(),
-                product.salePrice()));
+                product.salePrice(), existing.saleToAt(), product.saleToAt()));
     }
 
     private long requireStore(long tenantId) {
@@ -240,8 +257,10 @@ public class ProductSyncService {
     }
 
     /**
-     * Prices of an already-stored product row, for change detection.
+     * Prices and promotion end of an already-stored product row, for change
+     * detection.
      */
-    private record ExistingProduct(BigDecimal regularPrice, BigDecimal salePrice) {
+    private record ExistingProduct(BigDecimal regularPrice, BigDecimal salePrice,
+            Instant saleToAt) {
     }
 }

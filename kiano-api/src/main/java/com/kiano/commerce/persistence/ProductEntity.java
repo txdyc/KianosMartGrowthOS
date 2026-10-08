@@ -56,6 +56,10 @@ public class ProductEntity {
 
     private OffsetDateTime syncedAt;
 
+    private OffsetDateTime saleFromAt;
+
+    private OffsetDateTime saleToAt;
+
     public Long getId() {
         return id;
     }
@@ -222,5 +226,21 @@ public class ProductEntity {
 
     public void setSyncedAt(OffsetDateTime syncedAt) {
         this.syncedAt = syncedAt;
+    }
+
+    public OffsetDateTime getSaleFromAt() {
+        return saleFromAt;
+    }
+
+    public void setSaleFromAt(OffsetDateTime saleFromAt) {
+        this.saleFromAt = saleFromAt;
+    }
+
+    public OffsetDateTime getSaleToAt() {
+        return saleToAt;
+    }
+
+    public void setSaleToAt(OffsetDateTime saleToAt) {
+        this.saleToAt = saleToAt;
     }
 }

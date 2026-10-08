@@ -126,6 +126,39 @@ class ProductSyncServiceTest {
     }
 
     @Test
+    void saleEndDateChange_onlyDateChanged_firesPriceChanged() {
+        seedCatalog();
+        syncService.syncAll(tenantId);
+        applicationEvents.clear();
+
+        Instant newEnd = Instant.parse("2026-10-30T23:59:59Z");
+        port.products.replaceAll(p -> p.externalId() == 201 ? withSaleTo(p, newEnd) : p);
+
+        SyncResult result = syncService.syncAll(tenantId);
+
+        assertThat(result.priceChanges()).isEqualTo(1);
+        List<ProductPriceChanged> events = applicationEvents.stream(ProductPriceChanged.class).toList();
+        assertThat(events).hasSize(1);
+        assertThat(events.get(0).sku()).isEqualTo("MG-BL200");
+        assertThat(events.get(0).oldSaleToAt()).isNull();
+        assertThat(events.get(0).newSaleToAt()).isEqualTo(newEnd);
+    }
+
+    @Test
+    void unchangedSaleDates_noEvent() {
+        seedCatalog();
+        Instant end = Instant.parse("2026-10-20T23:59:59Z");
+        port.products.replaceAll(p -> p.externalId() == 201 ? withSaleTo(p, end) : p);
+        syncService.syncAll(tenantId);
+        applicationEvents.clear();
+
+        SyncResult second = syncService.syncAll(tenantId);
+
+        assertThat(second.priceChanges()).isZero();
+        assertThat(applicationEvents.stream(ProductPriceChanged.class)).isEmpty();
+    }
+
+    @Test
     void priceChange_auditsAndPublishesEvent() {
         seedCatalog();
         syncService.syncAll(tenantId);
@@ -245,14 +278,21 @@ class ProductSyncServiceTest {
                 name.toLowerCase().replace(' ', '-'), regular, sale, price, 10, "instock", status,
                 "https://woo.example.test/p/" + sku.toLowerCase(),
                 "https://woo.example.test/img/" + sku.toLowerCase() + ".jpg",
-                Instant.parse("2026-10-01T00:00:00Z"), categoryIds);
+                Instant.parse("2026-10-01T00:00:00Z"), categoryIds, null, null);
     }
 
     private static CommerceProduct variation(long externalId, long parentExternalId, String sku,
             String name, BigDecimal regular, BigDecimal sale) {
         return new CommerceProduct(externalId, parentExternalId, "variation", sku, "MorganGo",
                 name, null, regular, sale, sale, 5, "instock", "publish", null, null,
-                Instant.parse("2026-10-01T00:00:00Z"), List.of());
+                Instant.parse("2026-10-01T00:00:00Z"), List.of(), null, null);
+    }
+
+    private static CommerceProduct withSaleTo(CommerceProduct p, Instant saleToAt) {
+        return new CommerceProduct(p.externalId(), p.parentExternalId(), p.type(), p.sku(),
+                p.brand(), p.name(), p.slug(), p.regularPrice(), p.salePrice(), p.price(),
+                p.stockQty(), p.stockStatus(), p.status(), p.permalink(), p.imageUrl(),
+                p.modifiedAt(), p.categoryExternalIds(), p.saleFromAt(), saleToAt);
     }
 
     /**

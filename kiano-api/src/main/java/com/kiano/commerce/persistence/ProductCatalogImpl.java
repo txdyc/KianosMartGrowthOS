@@ -52,6 +52,8 @@ public class ProductCatalogImpl implements ProductCatalog {
                 entity.getSku(), entity.getName(), entity.getRegularPrice(), entity.getSalePrice(),
                 entity.getPrice(), entity.getStockQty(), entity.getStockStatus(),
                 entity.getStatus(), entity.getImageUrl(),
-                productMapper.selectCategorySlugs(entity.getId()));
+                productMapper.selectCategorySlugs(entity.getId()),
+                entity.getSaleFromAt() == null ? null : entity.getSaleFromAt().toInstant(),
+                entity.getSaleToAt() == null ? null : entity.getSaleToAt().toInstant());
     }
 }

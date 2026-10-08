@@ -89,6 +89,22 @@ class WooCommerceAdapterTest {
     }
 
     @Test
+    void mapsSaleDates_utc_andEmptyToNull() throws Exception {
+        stubProductsPage("1", fixture("products-page1.json"), 1);
+
+        List<CommerceProduct> products = adapter().listProducts();
+
+        // the lamp has date_on_sale_from_gmt / date_on_sale_to_gmt
+        CommerceProduct lamp = products.get(1);
+        assertThat(lamp.saleFromAt()).isEqualTo(Instant.parse("2026-10-15T00:00:00Z"));
+        assertThat(lamp.saleToAt()).isEqualTo(Instant.parse("2026-10-20T23:59:59Z"));
+        // the fan has no sale dates -> null
+        CommerceProduct fan = products.get(0);
+        assertThat(fan.saleFromAt()).isNull();
+        assertThat(fan.saleToAt()).isNull();
+    }
+
+    @Test
     void mapsImagesBrandParentAndModifiedUtc() throws Exception {
         stubProductsPage("1", fixture("products-page1.json"), 1);
 
@@ -120,7 +136,7 @@ class WooCommerceAdapterTest {
                         .withHeader("X-WP-TotalPages", "1")));
         CommerceProduct parent = new CommerceProduct(101, null, "variable", "MG-FAN16", "Morgan",
                 "Morgan Fan", "morgan-fan", null, null, null, null, null, "publish", null, null,
-                null, List.of());
+                null, List.of(), null, null);
 
         List<CommerceProduct> variations = adapter().listVariations(parent);
 

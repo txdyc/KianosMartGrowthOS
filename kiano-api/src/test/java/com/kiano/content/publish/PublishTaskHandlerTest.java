@@ -101,7 +101,8 @@ class PublishTaskHandlerTest {
                 reviewItem(7L, "PAGE_ANGLE", "P4", "IMAGE", null)));
 
         ProductView product = new ProductView(productId, null, "simple", "MG-BL200",
-                "Morgan Blender", null, null, null, null, null, "publish", null, List.of());
+                "Morgan Blender", null, null, null, null, null, "publish", null, List.of(),
+                null, null);
         com.kiano.commerce.ProductCatalog catalog = mock(com.kiano.commerce.ProductCatalog.class);
         when(catalog.findById(tenantId, productId)).thenReturn(Optional.of(product));
 
