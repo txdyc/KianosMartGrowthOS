@@ -41,7 +41,7 @@ class LlmCallRecorderTest {
     void record_insertsRowWithTokensCostAndStatus() {
         long id = recorder.record(new LlmCallRow(tenantId, LlmPurpose.FACT_DRAFT,
                 "claude-opus-5-5", "OK", 1200, 350, 800, 50,
-                new BigDecimal("0.011960"), 812, "end_turn", null));
+                new BigDecimal("0.011960"), 812, "end_turn", null, "ANTHROPIC"));
 
         assertThat(id).isPositive();
         assertThat(jdbcTemplate.queryForObject("select status from llm_call where id = ?",
@@ -62,13 +62,25 @@ class LlmCallRecorderTest {
                 String.class, id)).isEqualTo("end_turn");
         assertThat(jdbcTemplate.queryForObject("select error from llm_call where id = ?",
                 String.class, id)).isNull();
+        assertThat(jdbcTemplate.queryForObject("select provider from llm_call where id = ?",
+                String.class, id)).isEqualTo("ANTHROPIC");
+    }
+
+    @Test
+    void record_writesProviderColumn() {
+        long id = recorder.record(new LlmCallRow(tenantId, LlmPurpose.COPY,
+                "deepseek-flash", "OK", 100, 50, 0, 0,
+                new BigDecimal("0.000060"), 40, "stop", null, "OPENAI_COMPATIBLE:DeepSeek"));
+
+        assertThat(jdbcTemplate.queryForObject("select provider from llm_call where id = ?",
+                String.class, id)).isEqualTo("OPENAI_COMPATIBLE:DeepSeek");
     }
 
     @Test
     void record_failureRow_keepsErrorAndNullCost() {
         long id = recorder.record(new LlmCallRow(tenantId, LlmPurpose.COPY,
                 "claude-opus-5-5", "ERROR", 0, 0, 0, 0, null, 3,
-                null, "LLM_UNAVAILABLE: boom"));
+                null, "LLM_UNAVAILABLE: boom", "ANTHROPIC"));
 
         assertThat(jdbcTemplate.queryForObject("select status from llm_call where id = ?",
                 String.class, id)).isEqualTo("ERROR");
@@ -81,9 +93,9 @@ class LlmCallRecorderTest {
     @Test
     void rowsAreIndexedByTenantDesc() {
         recorder.record(new LlmCallRow(tenantId, LlmPurpose.FACT_DRAFT, "m", "OK",
-                1, 1, 0, 0, null, 1, null, null));
+                1, 1, 0, 0, null, 1, null, null, null));
         recorder.record(new LlmCallRow(tenantId, LlmPurpose.COPY, "m", "OK",
-                1, 1, 0, 0, null, 1, null, null));
+                1, 1, 0, 0, null, 1, null, null, null));
 
         assertThat(jdbcTemplate.queryForList(
                 "select purpose from llm_call where tenant_id = ? order by created_at desc",

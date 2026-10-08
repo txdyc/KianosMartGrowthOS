@@ -5,5 +5,6 @@ package com.kiano.platform.llm;
  */
 public enum LlmPurpose {
     FACT_DRAFT,
-    COPY
+    COPY,
+    CONNECTION_TEST
 }

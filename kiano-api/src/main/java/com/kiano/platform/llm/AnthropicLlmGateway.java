@@ -116,21 +116,21 @@ public class AnthropicLlmGateway implements LlmGateway {
                     .map(c -> c.asString()).orElse(null);
             recorder.record(new LlmCallRecorder.LlmCallRow(request.tenantId(), request.purpose(),
                     properties.getModel(), "REFUSED", input, output, cacheRead, cacheWrite,
-                    cost, latencyMs, stopReasonText, null));
+                    cost, latencyMs, stopReasonText, null, "ANTHROPIC"));
             throw new LlmRefusedException("Claude refused the request"
                     + (category == null ? "" : " (category: " + category + ")"), category);
         }
         if (stopReason == StopReason.MAX_TOKENS) {
             recorder.record(new LlmCallRecorder.LlmCallRow(request.tenantId(), request.purpose(),
                     properties.getModel(), "TRUNCATED", input, output, cacheRead, cacheWrite,
-                    cost, latencyMs, stopReasonText, null));
+                    cost, latencyMs, stopReasonText, null, "ANTHROPIC"));
             throw new LlmTruncatedException("Claude hit max_tokens (" + request.maxTokens()
                     + "); the output is incomplete");
         }
         T parsed = parse(request.outputType(), message);
         long callId = recorder.record(new LlmCallRecorder.LlmCallRow(request.tenantId(),
                 request.purpose(), properties.getModel(), "OK", input, output, cacheRead,
-                cacheWrite, cost, latencyMs, stopReasonText, null));
+                cacheWrite, cost, latencyMs, stopReasonText, null, "ANTHROPIC"));
         return new LlmResult<>(parsed, properties.getModel(), input, output, cost, callId);
     }
 
@@ -208,7 +208,8 @@ public class AnthropicLlmGateway implements LlmGateway {
     private LlmCallRecorder.LlmCallRow errorRow(LlmRequest<?> request, int latencyMs,
             @Nullable String stopReason, @Nullable String error) {
         return new LlmCallRecorder.LlmCallRow(request.tenantId(), request.purpose(),
-                properties.getModel(), "ERROR", 0, 0, 0, 0, null, latencyMs, stopReason, error);
+                properties.getModel(), "ERROR", 0, 0, 0, 0, null, latencyMs, stopReason, error,
+                "ANTHROPIC");
     }
 
     /** USD cost = in×P_in + out×P_out + cacheRead×P_cache, per million tokens. */

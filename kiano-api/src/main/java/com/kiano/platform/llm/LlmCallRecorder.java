@@ -24,7 +24,7 @@ public class LlmCallRecorder {
     public record LlmCallRow(long tenantId, LlmPurpose purpose, String model, String status,
             long inputTokens, long outputTokens, long cacheReadTokens, long cacheWriteTokens,
             @Nullable BigDecimal costUsd, int latencyMs, @Nullable String stopReason,
-            @Nullable String error) {
+            @Nullable String error, @Nullable String provider) {
     }
 
     /** Inserts the row and returns the new llm_call id. */
@@ -32,11 +32,11 @@ public class LlmCallRecorder {
         Long id = jdbcTemplate.queryForObject(
                 "insert into llm_call (tenant_id, purpose, model, input_tokens, output_tokens, "
                         + "cache_read_tokens, cache_write_tokens, cost_usd, latency_ms, status, "
-                        + "stop_reason, error) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
-                        + "returning id",
+                        + "stop_reason, error, provider) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                        + "?, ?, ?) returning id",
                 Long.class, row.tenantId(), row.purpose().name(), row.model(), row.inputTokens(),
                 row.outputTokens(), row.cacheReadTokens(), row.cacheWriteTokens(), row.costUsd(),
-                row.latencyMs(), row.status(), row.stopReason(), row.error());
+                row.latencyMs(), row.status(), row.stopReason(), row.error(), row.provider());
         return id;
     }
 }
