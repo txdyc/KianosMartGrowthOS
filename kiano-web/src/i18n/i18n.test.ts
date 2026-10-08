@@ -32,7 +32,7 @@ test("dictionary covers every backend enum and error code", () => {
   const jobSteps = ["CUTOUT", "SCENE_INPUT", "WHITE_MAIN", "WHITE_ANGLE", "INBOX", "SCENE"];
   const jobStatuses = ["QUEUED", "LEASED", "WAITING_EXECUTOR", "SUCCEEDED", "FAILED", "CANCELLED"];
   const runStatuses = ["RUNNING", "DONE", "PARTIAL"];
-  const precheckFlags = ["PRODUCT_MISMATCH", "AI_TEXT", "EDGE_NOT_WHITE", "OCCUPANCY_OUT_OF_RANGE"];
+  const precheckFlags = ["PRODUCT_MISMATCH", "AI_TEXT", "EDGE_NOT_WHITE", "OCCUPANCY_OUT_OF_RANGE", "FACT_MISMATCH", "FORBIDDEN_CLAIM", "POLICY_PENDING"];
   const rejectReasons = ["PRODUCT_MISMATCH", "AI_ARTIFACT", "WRONG_FACT", "TEXT_ERROR", "STYLE", "LOW_QUALITY", "POLICY"];
   const errorCodes = [
     "UNAUTHENTICATED",
@@ -58,6 +58,14 @@ test("dictionary covers every backend enum and error code", () => {
     "LEASE_LOST",
     "OUTPUT_MISSING",
     "WORKFLOW_INVALID",
+    "FACTS_NOT_CONFIRMED",
+    "FACTS_INCOMPLETE",
+    "FACT_DRAFT_CHANGED",
+    "FACT_DRAFT_EXISTS",
+    "NO_FACT_SOURCES",
+    "LLM_REFUSED",
+    "LLM_NOT_CONFIGURED",
+    "LLM_UNAVAILABLE",
   ];
 
   const required: MessageKey[] = [

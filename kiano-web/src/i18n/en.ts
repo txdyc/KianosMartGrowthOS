@@ -9,6 +9,7 @@ export const en = {
   "nav.review": "Review",
   "nav.reshoot": "Reshoot list",
   "nav.settings": "Settings",
+  "nav.facts": "Facts",
   "nav.logout": "Logout",
 
   // login
@@ -75,6 +76,9 @@ export const en = {
   "precheck.AI_TEXT": "Suspicious AI text",
   "precheck.EDGE_NOT_WHITE": "Edges are not pure white",
   "precheck.OCCUPANCY_OUT_OF_RANGE": "Product occupancy out of range",
+  "precheck.FACT_MISMATCH": "Facts do not match",
+  "precheck.FORBIDDEN_CLAIM": "Forbidden claim",
+  "precheck.POLICY_PENDING": "Store policy not filled",
 
   // RejectReason
   "reject.PRODUCT_MISMATCH": "Product mismatch",
@@ -103,9 +107,26 @@ export const en = {
   "pipeline.attempts": "{n}/{m} attempts",
   "pipeline.reviewLink": "Review ({n} pending)",
 
-  // image review board
+  // review board
   "review.empty": "No images waiting for review.",
-  "review.hint": "Keyboard: ← → ↑ ↓ move focus · A approve · R reject · G regenerate",
+  "review.hint": "Keyboard: ← → ↑ ↓ move focus · A approve · R reject · G regenerate · E edit text",
+  "review.filters.all": "All",
+  "review.filters.IMAGE": "Images",
+  "review.filters.TEXT": "Text",
+  "review.edit": "Edit",
+  "review.editing": "Editing",
+  "review.editSave": "Save edit",
+  "review.editCancel": "Cancel (Esc)",
+  "review.charOver": "{n} / {limit}",
+  "review.renderedPreview": "Rendered preview",
+  "review.factSummary": "Locked facts",
+  "review.fact.model": "Model",
+  "review.fact.capacity": "Capacity",
+  "review.fact.powerW": "Power",
+  "review.fact.voltage": "Voltage",
+  "review.fact.warranty": "Warranty",
+  "review.seo.title": "Title",
+  "review.seo.description": "Description",
   "review.sourcePhoto": "Source photo",
   "review.approveRemaining": "Approve remaining for this SKU",
   "review.confirmApproveRemaining": "Approve all {n} remaining images of this SKU?",
@@ -123,6 +144,20 @@ export const en = {
   "spec.PAGE_INBOX": "In the box",
   "spec.PAGE_INFO": "Info",
   "spec.PAGE_SPEC": "Specs",
+  "spec.COPY_TITLE": "Title",
+  "spec.COPY_SHORT": "Short",
+  "spec.COPY_LONG": "Long",
+  "spec.COPY_SEO": "SEO",
+  "spec.COPY_GSHOP": "GSHOP",
+  "spec.COPY_WA": "WhatsApp",
+
+  // AssetStatus on panels
+  "asset.IN_REVIEW": "In review",
+  "asset.APPROVED": "Approved",
+  "asset.REJECTED": "Rejected",
+  "asset.PUBLISHED": "Published",
+  "asset.STALE": "Stale",
+  "asset.ARCHIVED": "Archived",
 
   // import
   "import.summary": "Imported {n} files",
@@ -182,6 +217,46 @@ export const en = {
   "settings.guide":
     "Create the password in WordPress: Users → your Shop Manager user → Application Passwords → Add New. If the site runs on plain http, set WP_ENVIRONMENT_TYPE=local in wp-config.php, otherwise WordPress refuses REST API authentication. When Kiano runs in Docker and the store runs on this same computer, use http://host.docker.internal:8080 as the Base URL — inside a container, localhost is the container itself.",
 
+  // fact sheet review (G2)
+  "facts.sourcesP5": "Rating plate (P5)",
+  "facts.sourcesPROMO": "Promo photo",
+  "facts.generate": "AI draft",
+  "facts.generating": "Generating…",
+  "facts.saveDraft": "Save draft",
+  "facts.saving": "Saving…",
+  "facts.lock": "Lock facts",
+  "facts.draftSaved": "Draft saved.",
+  "facts.formTitle": "Facts",
+  "facts.hintLock": "Locking archives the current copy/spec assets and re-generates them from the new facts.",
+  "facts.confirmTitle": "Confirm before locking",
+  "facts.confirmBody": "Check every fact you have verified against the photos:",
+  "facts.confirmGo": "Lock facts",
+  "facts.cancel": "Cancel",
+  "facts.conflict": "The draft was modified by someone else. Refresh and confirm again.",
+  "facts.status.none": "No fact sheet",
+  "facts.status.draft": "Draft v{version}",
+  "facts.status.locked": "Locked v{version}",
+  "facts.field.model": "Model",
+  "facts.field.category": "Category",
+  "facts.field.capacity": "Capacity",
+  "facts.field.powerW": "Power (W)",
+  "facts.field.voltage": "Voltage",
+  "facts.field.material": "Material",
+  "facts.field.colour": "Colour",
+  "facts.field.warranty": "Warranty",
+  "facts.field.inBox": "In the box (one per line)",
+  "facts.field.features": "Features (one per line)",
+  "facts.field.benefits": "Benefits (one per line)",
+  "facts.source.P5": "P5",
+  "facts.source.PROMO": "PROMO",
+  "facts.source.WOO_TEXT": "Woo text",
+  "facts.source.MANUAL": "Manual",
+  "facts.source.NONE": "Unread",
+  "facts.copyProgress": "Copy & spec generation",
+  "facts.copy.spec": "Spec",
+  "facts.copy.status": "Status",
+  "facts.copyFlags": "{n} precheck flags",
+
   // generic
   "loading": "Loading…",
 
@@ -213,6 +288,14 @@ export const en = {
   "error.LEASE_LOST": "The job lease was lost; the worker stopped this job.",
   "error.OUTPUT_MISSING": "The worker did not upload the expected outputs.",
   "error.WORKFLOW_INVALID": "The workflow JSON does not satisfy the contract.",
+  "error.FACTS_NOT_CONFIRMED": "Confirm every fact you verified before locking.",
+  "error.FACTS_INCOMPLETE": "Model and warranty are required before locking.",
+  "error.FACT_DRAFT_CHANGED": "The fact draft was changed by someone else. Refresh and confirm again.",
+  "error.FACT_DRAFT_EXISTS": "A fact draft already exists. Lock or discard it before generating again.",
+  "error.NO_FACT_SOURCES": "No accepted P5 or PROMO photos exist for this product.",
+  "error.LLM_REFUSED": "The assistant declined to answer. Adjust the prompt and retry.",
+  "error.LLM_NOT_CONFIGURED": "The LLM is not configured. Set ANTHROPIC_API_KEY and restart.",
+  "error.LLM_UNAVAILABLE": "The LLM service is unavailable right now. Try again later.",
 } as const;
 
 export type MessageKey = keyof typeof en;

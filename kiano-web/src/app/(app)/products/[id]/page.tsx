@@ -5,6 +5,7 @@ import Link from "next/link";
 import { apiFetch, ApiError } from "@/lib/api";
 import { errorText, pickGuidance, useI18n } from "@/i18n";
 import { PipelinePanel } from "@/components/PipelinePanel";
+import { FactsPanel } from "@/components/FactsPanel";
 import type { ProductShotStatus, ShotStatusLine } from "@/lib/types";
 
 export default function ProductDetailPage({ params }: PageProps<"/products/[id]">) {
@@ -78,14 +79,25 @@ export default function ProductDetailPage({ params }: PageProps<"/products/[id]"
         >
           {status.complete ? t("detail.complete") : t("detail.incomplete")}
         </span>
+        <Link
+          href={`/products/${id}/facts`}
+          className="rounded-md border border-zinc-300 px-3 py-1 text-sm transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+        >
+          {t("nav.facts")}
+        </Link>
       </div>
 
-      <PipelinePanel productId={status.productId} shotsComplete={status.complete} />
+      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+        <div className="flex flex-col gap-6">
+          <PipelinePanel productId={status.productId} shotsComplete={status.complete} />
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
-        {status.lines.map((line) => (
-          <ShotCard key={line.code} line={line} />
-        ))}
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+            {status.lines.map((line) => (
+              <ShotCard key={line.code} line={line} />
+            ))}
+          </div>
+        </div>
+        <FactsPanel productId={status.productId} />
       </div>
     </div>
   );
