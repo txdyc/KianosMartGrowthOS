@@ -1,5 +1,6 @@
 package com.kiano.platform.llm;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.github.victools.jsonschema.generator.FieldScope;
 import com.github.victools.jsonschema.generator.OptionPreset;
 import com.github.victools.jsonschema.generator.SchemaGenerator;
@@ -9,7 +10,6 @@ import com.github.victools.jsonschema.module.jackson.JacksonModule;
 import java.lang.annotation.Annotation;
 import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.stereotype.Component;
-import tools.jackson.databind.JsonNode;
 
 /**
  * JSON Schema generation (Draft 2020-12) for LLM structured-output records,
