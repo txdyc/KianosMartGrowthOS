@@ -19,7 +19,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.List;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -28,20 +30,21 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * WireMock-backed tests for {@link AnthropicLlmGateway}: request shape (model,
- * effort, images before text, no thinking config, server-side fallback),
+ * WireMock-backed tests for {@link AnthropicProviderClient}: request shape
+ * (model, effort, images before text, no thinking config, server-side fallback),
  * stopReason handling (refusal / max_tokens), SDK retry exhaustion (529) and
- * auth errors, plus the llm_call ledger row on every path. The JDBC recorder
- * is mocked; {@link LlmCallRecorderTest} covers the real insert.
+ * auth errors, plus the llm_call ledger row on every path. Model, key and
+ * pricing are taken from the resolved route, never from LlmProperties. The JDBC
+ * recorder is mocked; {@link LlmCallRecorderTest} covers the real insert.
  */
-class AnthropicLlmGatewayTest {
+class AnthropicProviderClientTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final String MESSAGES_PATH = "/v1/messages";
 
     private WireMockServer wireMock;
     private LlmCallRecorder recorder;
-    private AnthropicLlmGateway gateway;
+    private AnthropicProviderClient client;
 
     @BeforeEach
     void setUp() {
@@ -49,8 +52,7 @@ class AnthropicLlmGatewayTest {
         wireMock.start();
         recorder = mock(LlmCallRecorder.class);
         when(recorder.record(any(LlmCallRow.class))).thenReturn(42L);
-        gateway = new AnthropicLlmGateway(props("test-key-123"), recorder,
-                wireMock.baseUrl());
+        client = new AnthropicProviderClient(recorder, wireMock.baseUrl());
     }
 
     @AfterEach
@@ -65,7 +67,7 @@ class AnthropicLlmGatewayTest {
     void structuredOutput_parsesRecord_andRecordsUsageAndCost() throws Exception {
         stubResponse(200, "structured-ok.json");
 
-        LlmResult<Probe> result = gateway.complete(request(LlmRequest.Effort.HIGH, 16000));
+        LlmResult<Probe> result = client.complete(request(LlmRequest.Effort.HIGH, 16000), route());
 
         assertThat(result.output()).isEqualTo(new Probe("MG-1500", 350));
         assertThat(result.model()).isEqualTo("claude-opus-5-5");
@@ -83,6 +85,7 @@ class AnthropicLlmGatewayTest {
         assertThat(row.getValue().inputTokens()).isEqualTo(1200);
         assertThat(row.getValue().outputTokens()).isEqualTo(350);
         assertThat(row.getValue().stopReason()).isEqualTo("end_turn");
+        assertThat(row.getValue().provider()).isEqualTo("ANTHROPIC");
     }
 
     @Test
@@ -90,9 +93,9 @@ class AnthropicLlmGatewayTest {
         stubResponse(200, "structured-ok.json");
         byte[] jpeg = new byte[]{(byte) 0xFF, (byte) 0xD8, 0x01, 0x02, 0x03};
 
-        gateway.complete(new LlmRequest<>(7L, LlmPurpose.COPY, "sys", "describe",
+        client.complete(new LlmRequest<>(7L, LlmPurpose.COPY, "sys", "describe",
                 List.of(new LlmImage(jpeg, "P5"), new LlmImage(jpeg, "PROMO")),
-                Probe.class, LlmRequest.Effort.HIGH, 16000));
+                Probe.class, LlmRequest.Effort.HIGH, 16000), route());
 
         List<WireMockRequest> sent = requests();
         assertThat(sent).hasSize(1);
@@ -118,7 +121,7 @@ class AnthropicLlmGatewayTest {
     void request_enablesServerSideFallback() throws Exception {
         stubResponse(200, "structured-ok.json");
 
-        gateway.complete(request(LlmRequest.Effort.LOW, 100));
+        client.complete(request(LlmRequest.Effort.LOW, 100), route());
 
         List<WireMockRequest> sent = requests();
         assertThat(sent).hasSize(1);
@@ -131,7 +134,7 @@ class AnthropicLlmGatewayTest {
     void refusal_throwsNonRetryableWithCategory_andRecordsRefused() {
         stubResponse(200, "refusal.json");
 
-        assertThatThrownBy(() -> gateway.complete(request(LlmRequest.Effort.HIGH, 16000)))
+        assertThatThrownBy(() -> client.complete(request(LlmRequest.Effort.HIGH, 16000), route()))
                 .isInstanceOfSatisfying(LlmRefusedException.class, ex -> {
                     assertThat(ex.code()).isEqualTo("LLM_REFUSED");
                     assertThat(ex.retryable()).isFalse();
@@ -151,7 +154,7 @@ class AnthropicLlmGatewayTest {
 
         // Not retryable: re-sending the same request with the same budget would
         // truncate again and bill the full output each time.
-        assertThatThrownBy(() -> gateway.complete(request(LlmRequest.Effort.HIGH, 16000)))
+        assertThatThrownBy(() -> client.complete(request(LlmRequest.Effort.HIGH, 16000), route()))
                 .isInstanceOfSatisfying(LlmTruncatedException.class, ex -> {
                     assertThat(ex.code()).isEqualTo("LLM_TRUNCATED");
                     assertThat(ex.retryable()).isFalse();
@@ -170,7 +173,7 @@ class AnthropicLlmGatewayTest {
                         .withHeader("Content-Type", "application/json")
                         .withBody(fixture("overloaded-529.json"))));
 
-        assertThatThrownBy(() -> gateway.complete(request(LlmRequest.Effort.HIGH, 16000)))
+        assertThatThrownBy(() -> client.complete(request(LlmRequest.Effort.HIGH, 16000), route()))
                 .isInstanceOfSatisfying(LlmException.class, ex -> {
                     assertThat(ex.code()).isEqualTo("LLM_UNAVAILABLE");
                     assertThat(ex.retryable()).isTrue();
@@ -186,7 +189,7 @@ class AnthropicLlmGatewayTest {
                         .withBody("{\"type\":\"error\",\"error\":{\"type\":\"authentication_error\","
                                 + "\"message\":\"Invalid API key\"}}")));
 
-        assertThatThrownBy(() -> gateway.complete(request(LlmRequest.Effort.HIGH, 16000)))
+        assertThatThrownBy(() -> client.complete(request(LlmRequest.Effort.HIGH, 16000), route()))
                 .isInstanceOfSatisfying(LlmException.class, ex -> {
                     assertThat(ex.code()).isEqualTo("LLM_CONFIG");
                     assertThat(ex.retryable()).isFalse();
@@ -198,10 +201,7 @@ class AnthropicLlmGatewayTest {
 
     @Test
     void missingApiKey_throwsNotConfigured_appStillStarts() {
-        AnthropicLlmGateway unconfigured = new AnthropicLlmGateway(props(""), recorder,
-                wireMock.baseUrl());
-
-        assertThatThrownBy(() -> unconfigured.complete(request(LlmRequest.Effort.HIGH, 16000)))
+        assertThatThrownBy(() -> client.complete(request(LlmRequest.Effort.HIGH, 16000), route("")))
                 .isInstanceOfSatisfying(LlmException.class, ex -> {
                     assertThat(ex.code()).isEqualTo("LLM_NOT_CONFIGURED");
                     assertThat(ex.retryable()).isFalse();
@@ -212,6 +212,43 @@ class AnthropicLlmGatewayTest {
         assertThat(row.getValue().error()).contains("ANTHROPIC_API_KEY");
     }
 
+    @Test
+    void usesRouteModelKeyAndPricing_notProperties() throws Exception {
+        stubResponse(200, "structured-ok.json");
+        ResolvedRoute sonnet = new ResolvedRoute(LlmPurpose.COPY, 1L, ProviderKind.ANTHROPIC,
+                "route-provider", null, "route-key-456", "claude-sonnet-5-5", true,
+                new Pricing(new BigDecimal("2.00"), new BigDecimal("10.00"),
+                        new BigDecimal("0.20")), Instant.EPOCH, false);
+
+        LlmResult<Probe> result = client.complete(request(LlmRequest.Effort.HIGH, 16000), sonnet);
+
+        // 1200×2/1e6 + 350×10/1e6 = 0.002400 + 0.003500
+        assertThat(result.model()).isEqualTo("claude-sonnet-5-5");
+        assertThat(result.costUsd()).isEqualByComparingTo(new BigDecimal("0.005900"));
+        List<WireMockRequest> sent = requests();
+        assertThat(sent).hasSize(1);
+        assertThat(sent.get(0).body().path("model").asText()).isEqualTo("claude-sonnet-5-5");
+        assertThat(sent.get(0).apiKeyHeader()).isEqualTo("route-key-456");
+
+        ArgumentCaptor<LlmCallRow> row = ArgumentCaptor.forClass(LlmCallRow.class);
+        verify(recorder).record(row.capture());
+        assertThat(row.getValue().model()).isEqualTo("claude-sonnet-5-5");
+        assertThat(row.getValue().provider()).isEqualTo("ANTHROPIC");
+    }
+
+    @Test
+    void differentKeys_useSeparateClients() throws Exception {
+        stubResponse(200, "structured-ok.json");
+
+        client.complete(request(LlmRequest.Effort.HIGH, 16000), route("key-A"));
+        client.complete(request(LlmRequest.Effort.HIGH, 16000), route("key-B"));
+
+        List<WireMockRequest> sent = requests();
+        assertThat(sent).hasSize(2);
+        assertThat(sent).extracting(WireMockRequest::apiKeyHeader)
+                .containsExactlyInAnyOrder("key-A", "key-B");
+    }
+
     // ---- helpers ----
 
     private static LlmRequest<Probe> request(LlmRequest.Effort effort, long maxTokens) {
@@ -219,16 +256,16 @@ class AnthropicLlmGatewayTest {
                 Probe.class, effort, maxTokens);
     }
 
-    private static LlmProperties props(String apiKey) {
-        LlmProperties props = new LlmProperties();
-        props.setModel("claude-opus-5-5");
-        props.setApiKey(apiKey);
-        LlmProperties.Pricing pricing = new LlmProperties.Pricing();
-        pricing.setInputPerMtok(new BigDecimal("4.00"));
-        pricing.setOutputPerMtok(new BigDecimal("20.00"));
-        pricing.setCacheReadPerMtok(new BigDecimal("0.20"));
-        props.setPricing(java.util.Map.of("claude-opus-5-5", pricing));
-        return props;
+    /** Default-env-like route: claude-opus-5-5 at 4.00/20.00/0.20. */
+    private static ResolvedRoute route() {
+        return route("test-key-123");
+    }
+
+    private static ResolvedRoute route(String apiKey) {
+        return new ResolvedRoute(LlmPurpose.COPY, 1L, ProviderKind.ANTHROPIC, "env-default",
+                null, apiKey, "claude-opus-5-5", true,
+                new Pricing(new BigDecimal("4.00"), new BigDecimal("20.00"),
+                        new BigDecimal("0.20")), Instant.EPOCH, true);
     }
 
     private void stubResponse(int status, String fixture) {
@@ -244,12 +281,13 @@ class AnthropicLlmGatewayTest {
                 .map(event -> new WireMockRequest(
                         MAPPER.readTree(event.getRequest().getBodyAsString()),
                         event.getRequest().getBodyAsString(),
-                        event.getRequest().getHeaders().getHeader("anthropic-beta").values()))
+                        event.getRequest().getHeaders().getHeader("anthropic-beta").values(),
+                        event.getRequest().getHeader("x-api-key")))
                 .toList();
     }
 
     private static String fixture(String name) {
-        try (InputStream in = AnthropicLlmGatewayTest.class.getClassLoader()
+        try (InputStream in = AnthropicProviderClientTest.class.getClassLoader()
                 .getResourceAsStream("anthropic/" + name)) {
             if (in == null) {
                 throw new IllegalStateException("Missing fixture " + name);
@@ -260,6 +298,7 @@ class AnthropicLlmGatewayTest {
         }
     }
 
-    private record WireMockRequest(JsonNode body, String rawBody, List<String> betaHeaders) {
+    private record WireMockRequest(JsonNode body, String rawBody, List<String> betaHeaders,
+            @Nullable String apiKeyHeader) {
     }
 }
