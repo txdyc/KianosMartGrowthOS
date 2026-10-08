@@ -26,6 +26,14 @@ kiano:
   bootstrap:
     owner-email: "${KIANO_BOOTSTRAP_OWNER_EMAIL:}"
     owner-password: "${KIANO_BOOTSTRAP_OWNER_PASSWORD:}"
+  llm:
+    model: claude-opus-5-5
+    api-key: "${ANTHROPIC_API_KEY:}"
+    pricing:
+      claude-opus-5-5:
+        input-per-mtok: 4.00
+        output-per-mtok: 20.00
+        cache-read-per-mtok: 0.20
   web:
     origin: "${KIANO_WEB_ORIGIN:http://localhost:3000}"
   storage:

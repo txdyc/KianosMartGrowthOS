@@ -1,0 +1,17 @@
+{
+  "id": "msg_01GVKRN13G2BZTRD",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-opus-5-5",
+  "content": [
+    {"type": "text", "text": "{\"model\":\"MG-1500\",\"powerW\":350}"}
+  ],
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 1200,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 0,
+    "output_tokens": 350
+  }
+}
