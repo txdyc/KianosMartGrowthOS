@@ -95,6 +95,14 @@
       <artifactId>anthropic-java</artifactId>
       <version>2.70.0</version>
     </dependency>
+    <!-- Field descriptions on LLM structured-output records; the anthropic SDK
+         reads them to describe JSON schema properties. 2.21+ also provides
+         JsonSerializeAs that Jackson 3's annotation introspector needs. -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-annotations</artifactId>
+      <version>2.21</version>
+    </dependency>
     <dependency>
       <groupId>com.microsoft.playwright</groupId>
       <artifactId>playwright</artifactId>

@@ -5,7 +5,9 @@ import com.kiano.content.facts.FactSheetService.FactSheetView;
 import com.kiano.content.media.SourceMediaEntity;
 import com.kiano.content.media.SourceMediaMapper;
 import com.kiano.platform.auth.CurrentUser;
+import com.kiano.platform.queue.TaskQueue;
 import com.kiano.platform.storage.ObjectStorage;
+import com.kiano.platform.web.ApiException;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import java.time.Duration;
@@ -13,7 +15,10 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -38,12 +43,14 @@ public class FactSheetController {
     private final FactSheetService service;
     private final SourceMediaMapper sourceMediaMapper;
     private final ObjectStorage storage;
+    private final TaskQueue queue;
 
     public FactSheetController(FactSheetService service, SourceMediaMapper sourceMediaMapper,
-            ObjectStorage storage) {
+            ObjectStorage storage, TaskQueue queue) {
         this.service = service;
         this.sourceMediaMapper = sourceMediaMapper;
         this.storage = storage;
+        this.queue = queue;
     }
 
     public record SaveDraftRequest(@Valid FactsJson facts,
@@ -79,6 +86,35 @@ public class FactSheetController {
         Set<String> confirmed = request.confirmedFields() == null ? Set.of()
                 : new LinkedHashSet<>(request.confirmedFields());
         return service.lock(user, productId, request.draftVersion(), confirmed);
+    }
+
+    @PostMapping("/draft-from-ai")
+    @PreAuthorize("hasRole('OPERATOR')")
+    public ResponseEntity<Map<String, Object>> draftFromAi(CurrentUser user,
+            @PathVariable("id") long productId) {
+        Optional<FactSheetView> draft = service.current(user.tenantId(), productId);
+        if (draft.isPresent() && "DRAFT".equals(draft.get().status())) {
+            throw new ApiException(HttpStatus.CONFLICT, "FACT_DRAFT_EXISTS",
+                    "A fact draft already exists; lock or discard it before generating again");
+        }
+        if (factSourceCount(user.tenantId(), productId) == 0) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "NO_FACT_SOURCES",
+                    "No accepted P5 or PROMO photos exist for this product");
+        }
+        Optional<Long> taskId = queue.enqueue(user.tenantId(), FactDraftTaskHandler.TYPE,
+                Map.of("productId", productId), "fact-draft:" + productId);
+        Map<String, Object> body = new LinkedHashMap<>();
+        taskId.ifPresent(id -> body.put("taskId", id));
+        body.put("alreadyQueued", taskId.isEmpty());
+        return ResponseEntity.accepted().body(body);
+    }
+
+    private long factSourceCount(long tenantId, long productId) {
+        return sourceMediaMapper.selectCount(Wrappers.<SourceMediaEntity>lambdaQuery()
+                .eq(SourceMediaEntity::getTenantId, tenantId)
+                .eq(SourceMediaEntity::getProductId, productId)
+                .in(SourceMediaEntity::getShotCode, List.of("P5", "PROMO"))
+                .eq(SourceMediaEntity::getStatus, "ACCEPTED"));
     }
 
     /** Latest accepted P5 and PROMO media as presigned URLs for side-by-side review. */

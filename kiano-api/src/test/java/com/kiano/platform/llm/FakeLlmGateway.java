@@ -18,20 +18,23 @@ public class FakeLlmGateway implements LlmGateway {
 
     private final List<RecordedRequest> recorded = new ArrayList<>();
     private final Deque<Object> outputs = new ArrayDeque<>();
-    private volatile LlmException failWith;
+    private volatile LlmException failNext;
+    private volatile long llmCallId = 11L;
 
     @Override
     public <T> LlmResult<T> complete(LlmRequest<T> request) throws LlmException {
         recorded.add(new RecordedRequest(request.purpose(), request.system(), request.userText(),
                 List.copyOf(request.images()), request.outputType(), request.effort(),
                 request.maxTokens()));
-        if (failWith != null) {
-            throw failWith;
+        LlmException failure = failNext;
+        if (failure != null) {
+            failNext = null; // one-shot: only the next call fails
+            throw failure;
         }
         @SuppressWarnings("unchecked")
         T output = outputs.isEmpty() ? null : (T) outputs.remove();
         return new LlmResult<>(output, FAKE_MODEL, 100, 50,
-                new BigDecimal("0.001400"), 11L);
+                new BigDecimal("0.001400"), llmCallId);
     }
 
     /** Pushes the next output to return. */
@@ -39,13 +42,21 @@ public class FakeLlmGateway implements LlmGateway {
         outputs.add(output);
     }
 
-    /** Fail the next call with this exception (sticky until cleared). */
+    /** The very next call fails with this exception (then clears itself). */
     public void failWith(LlmException failure) {
-        this.failWith = failure;
+        this.failNext = failure;
     }
 
-    public void clearFailure() {
-        this.failWith = null;
+    /** llm_call id the fake reports; tests tie it to a real inserted row. */
+    public void setLlmCallId(long llmCallId) {
+        this.llmCallId = llmCallId;
+    }
+
+    /** Clears queue, pending failure and recorded calls (per-test state). */
+    public void reset() {
+        outputs.clear();
+        failNext = null;
+        recorded.clear();
     }
 
     public int callCount() {

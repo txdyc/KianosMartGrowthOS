@@ -28,7 +28,12 @@ public class TemplateBootstrap implements ApplicationRunner {
 
     private static final List<Baseline> BASELINES = List.of(
             new Baseline("PAGE_INFO", "INFOGRAPHIC"),
-            new Baseline("PAGE_SPEC", "SPEC"));
+            new Baseline("PAGE_SPEC", "SPEC"),
+            new Baseline("FACT_PROMPT", "FACT_PROMPT"),
+            new Baseline("POLICY_BLOCK", "POLICY_BLOCK"),
+            new Baseline("COPY_PROMPT", "COPY_PROMPT"),
+            new Baseline("COPY_LONG", "COPY_LAYOUT"),
+            new Baseline("COPY_SHORT", "COPY_LAYOUT"));
 
     private final JdbcTemplate jdbcTemplate;
     private final TemplateRegistry registry;
@@ -52,7 +57,11 @@ public class TemplateBootstrap implements ApplicationRunner {
     }
 
     private void bootstrapCode(long tenantId, Baseline baseline) {
+        // HTML templates use v1.html; prompt templates (FACT_PROMPT) use v1.txt.
         String body = readClasspath("templates/content/" + baseline.code() + "/v1.html");
+        if (body == null) {
+            body = readClasspath("templates/content/" + baseline.code() + "/v1.txt");
+        }
         if (body == null) {
             throw new IllegalStateException("Baseline template " + baseline.code()
                     + " v1 is missing from the classpath");
