@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -81,7 +82,7 @@ public class ComfyUIExecutor implements GenerationExecutor {
         Map<String, String> uploaded = uploadInputs(manifest, ctx);
         JsonNode bound = binder.bind(workflowSpec.path("json"), manifest, uploaded, params);
         String promptId = client.queuePrompt(bound, "kiano-" + UUID.randomUUID());
-        JsonNode history = await(promptId);
+        JsonNode history = await(promptId, timeoutFor(job.input()));
         checkExecutionError(promptId, history);
         downloadOutputs(manifest, history, ctx);
         return new JobResult(gpuSeconds(history, startNanos));
@@ -117,8 +118,17 @@ public class ComfyUIExecutor implements GenerationExecutor {
         return uploaded;
     }
 
-    private JsonNode await(String promptId) throws ExecutorException {
-        long deadline = System.nanoTime() + properties.getTimeout().toNanos();
+    /**
+     * Job input {@code comfyTimeoutSeconds} overrides the global worker
+     * timeout: one H3 clip may run for many minutes on the GPU.
+     */
+    private Duration timeoutFor(JsonNode input) {
+        int seconds = input.path("comfyTimeoutSeconds").asInt(0);
+        return seconds > 0 ? Duration.ofSeconds(seconds) : properties.getTimeout();
+    }
+
+    private JsonNode await(String promptId, Duration timeout) throws ExecutorException {
+        long deadline = System.nanoTime() + timeout.toNanos();
         while (true) {
             Optional<JsonNode> history = client.history(promptId);
             if (history.isPresent()
@@ -128,7 +138,7 @@ public class ComfyUIExecutor implements GenerationExecutor {
             if (System.nanoTime() >= deadline) {
                 client.interrupt();
                 throw new ExecutorException("ComfyUI did not finish prompt " + promptId
-                        + " within " + properties.getTimeout(), true);
+                        + " within " + timeout, true);
             }
             try {
                 Thread.sleep(POLL_INTERVAL_MS);
@@ -160,16 +170,40 @@ public class ComfyUIExecutor implements GenerationExecutor {
             return;
         }
         for (Map.Entry<String, WorkflowManifest.Binding> entry : manifest.outputs().entrySet()) {
-            JsonNode image = history.path("outputs")
-                    .path(entry.getValue().node()).path("images").path(0);
-            byte[] bytes = client.view(image.path("filename").asString(),
-                    image.path("subfolder").asString(), image.path("type").asString("output"));
+            WorkflowManifest.Binding binding = entry.getValue();
+            // the binding names the history key; images (SaveImage/SaveVideo) is the default
+            String key = binding.field() == null || binding.field().isBlank()
+                    ? "images" : binding.field();
+            JsonNode media = history.path("outputs").path(binding.node()).path(key).path(0);
+            byte[] bytes = client.view(media.path("filename").asString(),
+                    media.path("subfolder").asString(), media.path("type").asString("output"));
+            Path target = ctx.outputs().get(entry.getKey());
+            if (isMp4Target(target) && !hasFtyp(bytes)) {
+                throw new ExecutorException("OUTPUT_FORMAT: ComfyUI output for '" + entry.getKey()
+                        + "' is not an mp4 file", false);
+            }
             try {
-                Files.write(ctx.outputs().get(entry.getKey()), bytes);
+                Files.write(target, bytes);
             } catch (IOException ex) {
                 throw new UncheckedIOException(ex);
             }
         }
+    }
+
+    private static boolean isMp4Target(Path target) {
+        return target.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".mp4");
+    }
+
+    /** Video detection: the ftyp box header within the first 32 bytes. */
+    private static boolean hasFtyp(byte[] bytes) {
+        int limit = Math.min(bytes.length - 4, 32);
+        for (int i = 0; i <= limit; i++) {
+            if (bytes[i] == 'f' && bytes[i + 1] == 't' && bytes[i + 2] == 'y'
+                    && bytes[i + 3] == 'p') {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

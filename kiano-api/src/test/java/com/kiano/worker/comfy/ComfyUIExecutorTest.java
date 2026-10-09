@@ -34,6 +34,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -229,6 +230,120 @@ class ComfyUIExecutorTest {
                 """.formatted(requiredNodeClasses);
         return new JobPayload(1, JobStep.CUTOUT, "main", ExecutorType.COMFYUI,
                 mapper.readTree(inputJson));
+    }
+
+    @Test
+    void videoOutput_readsConfiguredHistoryKey_gifs() throws Exception {
+        stubObjectInfo();
+        stubUploadAndPromptOk();
+        comfy.stubFor(get(urlPathEqualTo(HISTORY)).willReturn(okJson(fixture("history-video.json"))));
+        byte[] mp4 = mp4Bytes();
+        comfy.stubFor(get(urlPathEqualTo("/view"))
+                .withQueryParam("filename", equalTo("h3_hook_00001.mp4"))
+                .withQueryParam("subfolder", equalTo("kiano"))
+                .withQueryParam("type", equalTo("output"))
+                .willReturn(aResponse().withBody(mp4)));
+
+        JobResult result = executor().execute(videoPayload("gifs", 0), videoContext());
+
+        assertThat(Files.readAllBytes(workDir.resolve("out/clip.mp4"))).isEqualTo(mp4);
+        assertThat(result.gpuSeconds()).isCloseTo(0.18, within(1e-6));
+        comfy.verify(1, getRequestedFor(urlPathEqualTo("/view")));
+    }
+
+    @Test
+    void videoOutput_notMp4_nonRetryableOutputFormat() throws Exception {
+        stubObjectInfo();
+        stubUploadAndPromptOk();
+        comfy.stubFor(get(urlPathEqualTo(HISTORY)).willReturn(okJson(fixture("history-video.json"))));
+        comfy.stubFor(get(urlPathEqualTo("/view")).willReturn(aResponse()
+                .withBody(ImageCodec.png(new BufferedImage(6, 4, BufferedImage.TYPE_INT_RGB)))));
+
+        assertThatThrownBy(() -> executor().execute(videoPayload("gifs", 0), videoContext()))
+                .isInstanceOfSatisfying(ExecutorException.class, ex -> {
+                    assertThat(ex.retryable()).isFalse();
+                    assertThat(ex.getMessage()).contains("OUTPUT_FORMAT");
+                });
+    }
+
+    @Test
+    void perJobTimeoutOverridesGlobal() throws Exception {
+        properties.setTimeout(Duration.ofMinutes(15));
+        stubUploadAndPromptOk();
+        // /history stays unstubbed → WireMock's 404 = "not finished yet".
+
+        assertThatThrownBy(() -> executor().execute(videoPayload("gifs", 1), videoContext()))
+                .isInstanceOfSatisfying(ExecutorException.class, ex -> {
+                    assertThat(ex.retryable()).isTrue();
+                    assertThat(ex.getMessage()).contains("PT1S");
+                });
+        comfy.verify(1, postRequestedFor(urlPathEqualTo("/interrupt")));
+    }
+
+    @Test
+    void existingSceneWorkflow_unchanged_defaultImagesKey() throws Exception {
+        stubObjectInfo();
+        stubUploadAndPromptOk();
+        // the same history under the default key: outputs[node].images[0]
+        comfy.stubFor(get(urlPathEqualTo(HISTORY))
+                .willReturn(okJson(fixture("history-video.json").replace("\"gifs\"", "\"images\""))));
+        byte[] mp4 = mp4Bytes();
+        comfy.stubFor(get(urlPathEqualTo("/view"))
+                .withQueryParam("filename", equalTo("h3_hook_00001.mp4"))
+                .willReturn(aResponse().withBody(mp4)));
+
+        executor().execute(videoPayload(null, 0), videoContext());
+
+        assertThat(Files.readAllBytes(workDir.resolve("out/clip.mp4"))).isEqualTo(mp4);
+    }
+
+    private JobPayload videoPayload(@Nullable String historyField, int comfyTimeoutSeconds) {
+        String binding = historyField == null
+                ? "{\"node\": \"3\"}"
+                : "{\"node\": \"3\", \"field\": \"" + historyField + "\"}";
+        String inputJson = """
+                {"workflow": {"code": "H3_I2V", "version": 1,
+                  "json": {
+                    "1": {"class_type": "LoadImage", "inputs": {"image": "placeholder.png"}},
+                    "2": {"class_type": "MiniMaxH3I2V", "inputs": {"image": ["1", 0], "positive": "",
+                        "seed": 0, "width": 720, "height": 1280, "frames": 120}},
+                    "3": {"class_type": "VHS_VideoCombine", "inputs": {"images": ["2", 0],
+                        "filename_prefix": "h3_hook"}}},
+                  "manifest": {
+                    "code": "H3_I2V",
+                    "inputs": {"image": {"node": "1", "field": "image"}},
+                    "params": {"positive": {"node": "2", "field": "positive"},
+                      "seed": {"node": "2", "field": "seed"}, "width": {"node": "2", "field": "width"},
+                      "height": {"node": "2", "field": "height"}, "frames": {"node": "2", "field": "frames"}},
+                    "outputs": {"clip": %s},
+                    "requiredNodeClasses": [], "models": []}},
+                 "params": {"positive": "slow push in", "seed": 7, "width": 720, "height": 1280,
+                    "frames": 120},
+                 "inputs": {"image": "t1/media/1.jpg"},
+                 "outputs": {"clip": "t1/gen/1/clip.mp4"},
+                 "comfyTimeoutSeconds": %d}
+                """.formatted(binding, comfyTimeoutSeconds);
+        return new JobPayload(1, JobStep.H3_CLIP_LOCAL, "demo", ExecutorType.COMFYUI,
+                mapper.readTree(inputJson));
+    }
+
+    private ExecutionContext videoContext() throws IOException {
+        Path input = workDir.resolve("in/image.png");
+        Files.createDirectories(input.getParent());
+        Files.write(input, ImageCodec.png(new BufferedImage(60, 40, BufferedImage.TYPE_INT_RGB)));
+        Path output = workDir.resolve("out/clip.mp4");
+        Files.createDirectories(output.getParent());
+        return new ExecutionContext(workDir, Map.of("image", input), Map.of("clip", output));
+    }
+
+    /** Minimal mp4: a size field followed by the ftyp box header. */
+    private static byte[] mp4Bytes() {
+        byte[] bytes = new byte[16];
+        byte[] header = {'f', 't', 'y', 'p', 'i', 's', 'o', 'm'};
+        for (int i = 0; i < header.length; i++) {
+            bytes[4 + i] = header[i];
+        }
+        return bytes;
     }
 
     private static String fixture(String name) {

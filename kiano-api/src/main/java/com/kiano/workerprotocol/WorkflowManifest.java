@@ -17,7 +17,13 @@ public record WorkflowManifest(String code,
         @Nullable List<String> requiredNodeClasses,
         @Nullable List<ModelRef> models) {
 
-    /** A named slot bound to a workflow node (and, for inputs/params, a field). */
+    /**
+     * A named slot bound to a workflow node. For inputs and params {@code field}
+     * is the node input the api fills in. For outputs it names the key the file
+     * lands under in the ComfyUI history entry ({@code outputs[node][field][0]}):
+     * the core SaveVideo node writes {@code images}, VHS_VideoCombine writes
+     * {@code gifs}; it defaults to {@code images} when omitted.
+     */
     public record Binding(String node, @Nullable String field, @Nullable Integer maxLongSide) {
     }
 

@@ -184,8 +184,36 @@ public class WorkflowRegistry {
     }
 
     private void validateCode(WorkflowManifest manifest, List<String> errors) {
-        if (!"CUTOUT".equals(manifest.code()) && !"SCENE".equals(manifest.code())) {
-            errors.add("manifest.code must be CUTOUT or SCENE, got '" + manifest.code() + "'");
+        switch (manifest.code() == null ? "" : manifest.code()) {
+            case "CUTOUT", "SCENE" -> {
+            }
+            case "H3_I2V" -> validateH3Contract(manifest, errors);
+            default -> errors.add("manifest.code must be CUTOUT, SCENE or H3_I2V, got '"
+                    + manifest.code() + "'");
+        }
+    }
+
+    /**
+     * H3_I2V contract (C5 T8b): image-to-video needs the reviewed first frame
+     * plus the prompt/seed/size/frame params. {@code outputs.clip} may name the
+     * ComfyUI history key its file lands under (SaveVideo: images,
+     * VHS_VideoCombine: gifs; defaults to images). Licenses are checked like
+     * every other workflow (Global Constraints #6).
+     */
+    private void validateH3Contract(WorkflowManifest manifest, List<String> errors) {
+        Map<String, WorkflowManifest.Binding> inputs = manifest.inputs();
+        if (inputs == null || !inputs.containsKey("image")) {
+            errors.add("H3_I2V inputs must contain 'image' (the reviewed first frame)");
+        }
+        Map<String, WorkflowManifest.Binding> params = manifest.params();
+        for (String required : List.of("positive", "seed", "width", "height", "frames")) {
+            if (params == null || !params.containsKey(required)) {
+                errors.add("H3_I2V params must contain '" + required + "'");
+            }
+        }
+        Map<String, WorkflowManifest.Binding> outputs = manifest.outputs();
+        if (outputs == null || !outputs.containsKey("clip")) {
+            errors.add("H3_I2V outputs must contain 'clip'");
         }
     }
 

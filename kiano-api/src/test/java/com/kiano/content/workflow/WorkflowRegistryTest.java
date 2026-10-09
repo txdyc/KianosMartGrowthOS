@@ -17,6 +17,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
  * Workflow registry: versioned registration with binding and license
@@ -36,6 +38,8 @@ class WorkflowRegistryTest {
 
     @Autowired
     private WorkflowBootstrap bootstrap;
+
+    private final JsonMapper jsonMapper = JsonMapper.builder().build();
 
     private long tenantId;
 
@@ -168,6 +172,62 @@ class WorkflowRegistryTest {
                 "InpaintModelConditioning", "ImageCompositeMasked", "KSampler");
         assertThat(scene.manifest().models().get(0).license())
                 .isEqualTo("CreativeML-OpenRAIL++-M");
+    }
+
+    @Test
+    void h3I2v_registersWithContract_missingFramesParam422() throws Exception {
+        ObjectNode manifest = (ObjectNode) jsonMapper.readTree(h3Fixture("manifest.json"));
+        ((ObjectNode) manifest.path("params")).remove("frames");
+
+        assertThatThrownBy(() -> registry.register(tenantId, h3Fixture("workflow.json"),
+                jsonMapper.writeValueAsString(manifest), null))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> {
+                    ApiException api = (ApiException) ex;
+                    assertThat(api.getStatus().value()).isEqualTo(422);
+                    assertThat(api.getCode()).isEqualTo("WORKFLOW_INVALID");
+                    @SuppressWarnings("unchecked")
+                    List<String> errors = (List<String>) api.getDetails().get("errors");
+                    assertThat(errors).anyMatch(e -> e.contains("params") && e.contains("frames"));
+                });
+
+        WorkflowRegistry.ComfyWorkflowView view = registry.register(tenantId,
+                h3Fixture("workflow.json"), h3Fixture("manifest.json"), null);
+        assertThat(view.code()).isEqualTo("H3_I2V");
+        assertThat(view.manifest().inputs().get("image").maxLongSide()).isEqualTo(1280);
+        assertThat(view.manifest().outputs().get("clip").field()).isEqualTo("gifs");
+        assertThat(view.manifest().models().get(0).license()).isEqualTo("MIT");
+    }
+
+    @Test
+    void h3I2v_modelLicenseNotWhitelisted_rejected() throws Exception {
+        ObjectNode manifest = (ObjectNode) jsonMapper.readTree(h3Fixture("manifest.json"));
+        ((ObjectNode) manifest.path("models").path(0)).put("license", "CC-BY-NC-4.0");
+
+        assertThatThrownBy(() -> registry.register(tenantId, h3Fixture("workflow.json"),
+                jsonMapper.writeValueAsString(manifest), null))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> {
+                    ApiException api = (ApiException) ex;
+                    assertThat(api.getStatus().value()).isEqualTo(422);
+                    assertThat(api.getCode()).isEqualTo("WORKFLOW_INVALID");
+                    @SuppressWarnings("unchecked")
+                    List<String> errors = (List<String>) api.getDetails().get("errors");
+                    assertThat(errors).anyMatch(e -> e.contains("CC-BY-NC-4.0"));
+                });
+    }
+
+    /** The minimal H3_I2V fixture: only registrations and bindings, never executed. */
+    private static String h3Fixture(String file) {
+        try (InputStream in = WorkflowRegistryTest.class
+                .getResourceAsStream("/workflows/h3_i2v_fixture/" + file)) {
+            if (in == null) {
+                throw new IOException("fixture not found: " + file);
+            }
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException ex) {
+            throw new IllegalStateException(ex);
+        }
     }
 
     private static String fixture(String path) {

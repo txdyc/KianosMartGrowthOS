@@ -1,0 +1,31 @@
+{
+  "1": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "placeholder.png",
+      "upload": "image"
+    }
+  },
+  "2": {
+    "class_type": "MiniMaxH3I2V",
+    "inputs": {
+      "image": ["1", 0],
+      "positive": "",
+      "negative": "",
+      "seed": 0,
+      "width": 720,
+      "height": 1280,
+      "frames": 120,
+      "fps": 24
+    }
+  },
+  "3": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "images": ["2", 0],
+      "frame_rate": 24,
+      "filename_prefix": "h3_hook",
+      "format": "video/h264-mp4"
+    }
+  }
+}

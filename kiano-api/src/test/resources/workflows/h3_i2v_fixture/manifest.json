@@ -1,0 +1,27 @@
+{
+  "code": "H3_I2V",
+  "inputs": {
+    "image": {"node": "1", "field": "image", "maxLongSide": 1280}
+  },
+  "params": {
+    "positive": {"node": "2", "field": "positive"},
+    "negative": {"node": "2", "field": "negative"},
+    "seed": {"node": "2", "field": "seed"},
+    "width": {"node": "2", "field": "width"},
+    "height": {"node": "2", "field": "height"},
+    "frames": {"node": "2", "field": "frames"},
+    "fps": {"node": "2", "field": "fps"}
+  },
+  "outputs": {
+    "clip": {"node": "3", "field": "gifs"}
+  },
+  "requiredNodeClasses": [],
+  "models": [
+    {
+      "name": "h3-test-fixture",
+      "file": "h3_i2v_fixture.safetensors",
+      "license": "MIT",
+      "source": "https://example.test/h3-i2v-fixture"
+    }
+  ]
+}

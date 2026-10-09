@@ -237,6 +237,17 @@ public class GenerationJobStore {
                 "select * from generation_job where tenant_id=? and run_id=? order by id", mapper, tenantId, runId);
     }
 
+    /**
+     * H3_CLIP_LOCAL jobs created before {@code createdBefore} that never
+     * reached a terminal state - the local watchdog's escalation candidates.
+     */
+    public List<GenerationJob> staleH3Local(Instant createdBefore) {
+        return jdbcTemplate.query(
+                "select * from generation_job where step = 'H3_CLIP_LOCAL' and created_at < ? "
+                        + "and status in ('QUEUED','WAITING_EXECUTOR','LEASED') order by id",
+                mapper, java.sql.Timestamp.from(createdBefore));
+    }
+
     public Optional<GenerationJob> find(long tenantId, long jobId) {
         return jdbcTemplate.query(
                 "select * from generation_job where tenant_id=? and id=?", mapper, tenantId, jobId)
