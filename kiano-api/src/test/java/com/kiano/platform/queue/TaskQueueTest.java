@@ -78,6 +78,9 @@ class TaskQueueTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private org.springframework.transaction.PlatformTransactionManager txManager;
+
     private long tenantId;
 
     @BeforeEach
@@ -94,6 +97,26 @@ class TaskQueueTest {
         Optional<Long> second = queue.enqueue(tenantId, "ok", Map.of("n", 2), "dedupe-1");
         assertThat(first).isPresent();
         assertThat(second).isEmpty();
+    }
+
+    @Test
+    void duplicateEnqueue_insideTransaction_doesNotAbortIt() {
+        // PostgreSQL aborts the whole transaction on a failed statement: a
+        // duplicate must be skipped without an error so later work still runs
+        queue.enqueue(tenantId, "ok", Map.of("n", 1), "dedupe-tx");
+
+        Optional<Long> third = new org.springframework.transaction.support.TransactionTemplate(
+                txManager).execute(status -> {
+                    Optional<Long> duplicate = queue.enqueue(tenantId, "ok", Map.of("n", 2),
+                            "dedupe-tx");
+                    assertThat(duplicate).isEmpty();
+                    return queue.enqueue(tenantId, "ok", Map.of("n", 3), "dedupe-tx-other");
+                });
+
+        assertThat(third).isPresent();
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from platform_task where tenant_id = ? and dedupe_key like 'dedupe-tx%'",
+                Integer.class, tenantId)).isEqualTo(2);
     }
 
     @Test
