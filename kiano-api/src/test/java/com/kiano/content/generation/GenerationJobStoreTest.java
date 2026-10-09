@@ -20,6 +20,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -48,15 +49,29 @@ class GenerationJobStoreTest {
     private long tenantId;
     private long productId;
     private long runId;
+    private long batchId;
 
     @BeforeEach
     void seed() {
         jdbcTemplate.update("delete from generation_job");
         jdbcTemplate.update("delete from generation_run");
+        jdbcTemplate.update("delete from content_batch");
         jdbcTemplate.update("delete from worker_status");
         tenantId = jdbcTemplate.queryForObject("select id from tenant where slug = 'kianosmart'", Long.class);
         productId = insertProduct("GEN-STORE-" + System.nanoTime());
         runId = runs.create(tenantId, productId, null);
+        // generation_job.batch_id has a foreign key (V23): the batch must exist
+        batchId = jdbcTemplate.queryForObject(
+                "insert into content_batch (tenant_id, name, status) "
+                        + "values (?, 'Job store test', 'RUNNING') returning id",
+                Long.class, tenantId);
+    }
+
+    /** Batch rows reference the tenant: never leave them behind. */
+    @AfterEach
+    void cleanUp() {
+        jdbcTemplate.update("delete from generation_job");
+        jdbcTemplate.update("delete from content_batch");
     }
 
     private long insertProduct(String sku) {
@@ -107,9 +122,9 @@ class GenerationJobStoreTest {
     @Test
     void lease_interactiveBeforeEarlierBatchJobs() {
         long oldestBatch = createJob(JobStep.CUTOUT, "P1",
-                new GenerationJobStore.JobPriority(10, 42L, false));
-        createJob(JobStep.CUTOUT, "P2", new GenerationJobStore.JobPriority(10, 42L, false));
-        createJob(JobStep.CUTOUT, "P3", new GenerationJobStore.JobPriority(10, 42L, false));
+                new GenerationJobStore.JobPriority(10, batchId, false));
+        createJob(JobStep.CUTOUT, "P2", new GenerationJobStore.JobPriority(10, batchId, false));
+        createJob(JobStep.CUTOUT, "P3", new GenerationJobStore.JobPriority(10, batchId, false));
         long interactive = createJob(JobStep.CUTOUT, "P4", GenerationJobStore.JobPriority.INTERACTIVE);
 
         Optional<GenerationJob> leased = jobs.lease("worker-1", Set.of(ExecutorType.COMFYUI), true);
@@ -126,7 +141,7 @@ class GenerationJobStoreTest {
 
     @Test
     void lease_nightOnlySkippedOutsideWindow_interactiveStillLeased() {
-        long night = createJob(JobStep.CUTOUT, "P1", new GenerationJobStore.JobPriority(10, 42L, true));
+        long night = createJob(JobStep.CUTOUT, "P1", new GenerationJobStore.JobPriority(10, batchId, true));
         long interactive = createJob(JobStep.CUTOUT, "P2", GenerationJobStore.JobPriority.INTERACTIVE);
 
         // daytime: the batch job waits, the interactive one is leased as usual
@@ -137,20 +152,20 @@ class GenerationJobStoreTest {
         // night: the batch job becomes leasable
         GenerationJob leasedNight = jobs.lease("worker-1", Set.of(ExecutorType.COMFYUI), true).orElseThrow();
         assertThat(leasedNight.id()).isEqualTo(night);
-        assertThat(leasedNight.batchId()).isEqualTo(42L);
+        assertThat(leasedNight.batchId()).isEqualTo(batchId);
         assertThat(leasedNight.nightOnly()).isTrue();
     }
 
     @Test
     void retryAndWaitingRecovery_keepPriorityBatchAndNightFlag() {
-        long jobId = createJob(JobStep.CUTOUT, "P1", new GenerationJobStore.JobPriority(10, 42L, true));
+        long jobId = createJob(JobStep.CUTOUT, "P1", new GenerationJobStore.JobPriority(10, batchId, true));
 
         jobs.lease("worker-1", Set.of(ExecutorType.COMFYUI), true);
         jobs.fail(jobId, "worker-1", "boom", true, false);
         GenerationJob retried = jobs.find(tenantId, jobId).orElseThrow();
         assertThat(retried.status()).isEqualTo(JobStatus.QUEUED);
         assertThat(retried.priority()).isEqualTo(10);
-        assertThat(retried.batchId()).isEqualTo(42L);
+        assertThat(retried.batchId()).isEqualTo(batchId);
         assertThat(retried.nightOnly()).isTrue();
 
         jdbcTemplate.update("update generation_job set run_after = now() where id = ?", jobId);
@@ -159,14 +174,14 @@ class GenerationJobStoreTest {
         GenerationJob waiting = jobs.find(tenantId, jobId).orElseThrow();
         assertThat(waiting.status()).isEqualTo(JobStatus.WAITING_EXECUTOR);
         assertThat(waiting.priority()).isEqualTo(10);
-        assertThat(waiting.batchId()).isEqualTo(42L);
+        assertThat(waiting.batchId()).isEqualTo(batchId);
         assertThat(waiting.nightOnly()).isTrue();
 
         jobs.releaseWaiting(ExecutorType.COMFYUI);
         GenerationJob released = jobs.find(tenantId, jobId).orElseThrow();
         assertThat(released.status()).isEqualTo(JobStatus.QUEUED);
         assertThat(released.priority()).isEqualTo(10);
-        assertThat(released.batchId()).isEqualTo(42L);
+        assertThat(released.batchId()).isEqualTo(batchId);
         assertThat(released.nightOnly()).isTrue();
     }
 
