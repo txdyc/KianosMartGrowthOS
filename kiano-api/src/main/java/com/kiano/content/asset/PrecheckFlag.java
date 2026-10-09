@@ -17,5 +17,7 @@ public enum PrecheckFlag {
     // Ad-static flags (C4a)
     TEXT_OUTSIDE_SAFE_AREA,
     // Video-script flags (C5)
-    CAPTION_COUNT
+    CAPTION_COUNT,
+    // Video flags (C5)
+    AI_RATIO_EXCEEDED
 }

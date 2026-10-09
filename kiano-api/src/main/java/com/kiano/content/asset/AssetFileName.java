@@ -17,6 +17,18 @@ public final class AssetFileName {
                 + "_v" + version + "." + ext;
     }
 
+    /**
+     * The same name with a rendition suffix before the extension (C5): the
+     * no-music TikTok version of {@code …_v1.mp4} is {@code …_v1_nomusic.mp4}.
+     */
+    public static String rendition(String fileName, String suffix) {
+        int dot = fileName.lastIndexOf('.');
+        if (dot < 0) {
+            return fileName + "_" + suffix;
+        }
+        return fileName.substring(0, dot) + "_" + suffix + fileName.substring(dot);
+    }
+
     public static Parsed parse(String fileName) {
         int dot = fileName.lastIndexOf('.');
         if (dot < 0) {

@@ -7,13 +7,18 @@ import com.kiano.content.copy.CopyAssembler;
 import com.kiano.content.generation.GenerationJob;
 import com.kiano.content.generation.GenerationJobStore;
 import com.kiano.content.generation.JobStatus;
+import com.kiano.content.video.EdlMath;
+import com.kiano.content.video.VideoProperties;
 import com.kiano.imaging.ImageCodec;
 import com.kiano.platform.audit.ActorType;
 import com.kiano.platform.audit.AuditEntry;
 import com.kiano.platform.audit.AuditLog;
 import com.kiano.platform.storage.ObjectStorage;
+import com.kiano.workerprotocol.Edl;
 import com.kiano.workerprotocol.JobStep;
 import java.awt.image.BufferedImage;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
@@ -43,15 +48,18 @@ public class AssetService {
     private final GenerationJobStore jobs;
     private final AuditLog auditLog;
     private final ObjectMapper objectMapper;
+    private final VideoProperties videoProperties;
 
     public AssetService(AssetMapper mapper, ObjectStorage storage, Precheck precheck,
-            GenerationJobStore jobs, AuditLog auditLog, ObjectMapper objectMapper) {
+            GenerationJobStore jobs, AuditLog auditLog, ObjectMapper objectMapper,
+            VideoProperties videoProperties) {
         this.mapper = mapper;
         this.storage = storage;
         this.precheck = precheck;
         this.jobs = jobs;
         this.auditLog = auditLog;
         this.objectMapper = objectMapper;
+        this.videoProperties = videoProperties;
     }
 
     @Transactional
@@ -118,6 +126,116 @@ public class AssetService {
         return new AssetView(entity.getId(), job.productId(), specCode, job.variant(), version,
                 entity.getStatus(), result.flags(), result.metrics(), fileName,
                 sourceMediaId(provenance), entity.getCreatedAt().toInstant());
+    }
+
+    /**
+     * Turns a finished VIDEO_COMPOSE job into a VIDEO_AD asset (C5 Task 9):
+     * copies the video, the no-music rendition and the poster into the asset
+     * directory ({@code renditions_json}), makes the thumbnail from the poster,
+     * takes the duration the worker measured, and records the AI ratio. A video
+     * whose AI share exceeds {@code max-ai-ratio} is REJECTED with the
+     * AI_RATIO_EXCEEDED flag and the VIDEO_BLOCKED_AI_RATIO audit instead of
+     * entering review. Asset reviews need a human reviewer, so the block is
+     * recorded through the flag and the audit row (C5 Global Constraints).
+     */
+    @Transactional
+    public AssetView createVideoFromJob(GenerationJob job, String sku,
+            Map<String, Object> provenance) {
+        Edl edl = objectMapper.treeToValue(job.input().path("edl"), Edl.class);
+        JsonNode outputs = job.output().path("outputs");
+        String videoKey = outputs.path("video").path("objectKey").asString();
+        String noMusicKey = outputs.path("video_nomusic").path("objectKey").asString();
+        String posterKey = outputs.path("poster").path("objectKey").asString();
+        Double durationS = outputs.path("video").path("durationS").isNumber()
+                ? outputs.path("video").path("durationS").asDouble() : null;
+
+        String variant = job.variant();
+        int version = nextVersion(job.tenantId(), job.productId(), "VIDEO_AD", variant);
+        String prefix = "t" + job.tenantId() + "/assets/" + job.productId() + "/VIDEO_AD/"
+                + variant + "/v" + version;
+        String fullKey = prefix + ".mp4";
+        String noMusicAssetKey = prefix + "_nomusic.mp4";
+        String posterAssetKey = prefix + "_poster.jpg";
+        String thumbKey = prefix + "_thumb.jpg";
+        storage.put(fullKey, storage.download(videoKey), "video/mp4");
+        storage.put(noMusicAssetKey, storage.download(noMusicKey), "video/mp4");
+        byte[] poster = storage.download(posterKey);
+        storage.put(posterAssetKey, poster, "image/jpeg");
+        storage.put(thumbKey, ImageCodec.thumbnailJpeg(ImageCodec.read(poster),
+                THUMBNAIL_LONG_SIDE), "image/jpeg");
+
+        double aiRatio = EdlMath.aiRatio(edl);
+        boolean mixed = EdlMath.mixed(edl);
+        boolean blocked = aiRatio > videoProperties.getMaxAiRatio();
+        List<PrecheckFlag> flags = blocked
+                ? List.of(PrecheckFlag.AI_RATIO_EXCEEDED) : List.of();
+        String fileName = AssetFileName.format(sku, variant, mixed ? "mixed" : "real",
+                (int) edl.width(), (int) edl.height(), version, "mp4");
+
+        AssetEntity entity = new AssetEntity();
+        entity.setTenantId(job.tenantId());
+        entity.setProductId(job.productId());
+        entity.setSpecCode("VIDEO_AD");
+        entity.setVariant(variant);
+        entity.setVersion(version);
+        entity.setKind("VIDEO");
+        entity.setObjectKey(fullKey);
+        entity.setThumbObjectKey(thumbKey);
+        entity.setWidth((int) edl.width());
+        entity.setHeight((int) edl.height());
+        entity.setDurationS(durationS == null ? null
+                : java.math.BigDecimal.valueOf(durationS)
+                        .setScale(2, java.math.RoundingMode.HALF_UP));
+        entity.setAiRatio(java.math.BigDecimal.valueOf(aiRatio));
+        entity.setDependsOnPrice(true);
+        entity.setPriceSnapshot(priceSnapshot(provenance));
+        entity.setRenditionsJson(objectMapper.writeValueAsString(Map.of(
+                "nomusic", noMusicAssetKey, "poster", posterAssetKey)));
+        entity.setStatus((blocked ? AssetStatus.REJECTED : AssetStatus.IN_REVIEW).name());
+        entity.setPrecheckJson(objectMapper.writeValueAsString(Map.of(
+                "flags", flags.stream().map(Enum::name).toList(), "metrics", Map.of())));
+        entity.setProvenanceJson(objectMapper.writeValueAsString(provenance));
+        entity.setFileName(fileName);
+        entity.setRunId(job.runId());
+        entity.setCreatedAt(OffsetDateTime.now());
+        mapper.insert(entity);
+
+        mapper.update(null, new LambdaUpdateWrapper<AssetEntity>()
+                .eq(AssetEntity::getTenantId, job.tenantId())
+                .eq(AssetEntity::getProductId, job.productId())
+                .eq(AssetEntity::getSpecCode, "VIDEO_AD")
+                .eq(AssetEntity::getVariant, variant)
+                .in(AssetEntity::getStatus, AssetStatus.DRAFT.name(), AssetStatus.IN_REVIEW.name())
+                .ne(AssetEntity::getId, entity.getId())
+                .set(AssetEntity::getStatus, AssetStatus.ARCHIVED.name()));
+
+        Map<String, Object> after = new LinkedHashMap<>();
+        after.put("fileName", fileName);
+        after.put("specCode", "VIDEO_AD");
+        after.put("version", version);
+        after.put("status", entity.getStatus());
+        after.put("aiRatio", aiRatio);
+        after.put("flags", flags.stream().map(Enum::name).toList());
+        auditLog.record(new AuditEntry(job.tenantId(), ActorType.SYSTEM, "pipeline",
+                "ASSET_CREATED", "asset", String.valueOf(entity.getId()), null, after, null, "VIDEO"));
+        if (blocked) {
+            auditLog.record(new AuditEntry(job.tenantId(), ActorType.SYSTEM, "SYSTEM",
+                    "VIDEO_BLOCKED_AI_RATIO", "asset", String.valueOf(entity.getId()), null,
+                    Map.of("aiRatio", aiRatio, "maxAiRatio", videoProperties.getMaxAiRatio()),
+                    "AI_RATIO_EXCEEDED", "VIDEO"));
+        }
+
+        return new AssetView(entity.getId(), job.productId(), "VIDEO_AD", variant, version,
+                entity.getStatus(), flags, Map.of(), fileName, sourceMediaId(provenance),
+                entity.getCreatedAt().toInstant());
+    }
+
+    private static @Nullable BigDecimal priceSnapshot(Map<String, Object> provenance) {
+        Object price = provenance == null ? null : provenance.get("price");
+        if (price instanceof Map<?, ?> map && map.get("snapshot") instanceof Number number) {
+            return BigDecimal.valueOf(number.doubleValue());
+        }
+        return null;
     }
 
     @Transactional

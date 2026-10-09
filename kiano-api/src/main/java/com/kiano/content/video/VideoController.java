@@ -8,7 +8,10 @@ import com.kiano.platform.auth.CurrentUser;
 import com.kiano.platform.queue.TaskQueue;
 import com.kiano.platform.web.ApiException;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -31,12 +34,46 @@ public class VideoController {
     private final TaskQueue queue;
     private final FactSheetService factSheetService;
     private final ProductProfileService profileService;
+    private final VideoRenderService renderService;
 
     public VideoController(TaskQueue queue, FactSheetService factSheetService,
-            ProductProfileService profileService) {
+            ProductProfileService profileService, VideoRenderService renderService) {
         this.queue = queue;
         this.factSheetService = factSheetService;
         this.profileService = profileService;
+        this.renderService = renderService;
+    }
+
+    /**
+     * Queues the video render of one product (C5 T9): all three types unless
+     * {@code types} narrows it. Preconditions are checked synchronously, so a
+     * missing script, footage, page image, badge or track is a 409
+     * VIDEO_PRECONDITIONS with the items in {@code details.missing}.
+     */
+    @PostMapping("/products/{id}/videos/render")
+    @PreAuthorize("hasRole('OPERATOR')")
+    public ResponseEntity<Map<String, Object>> render(CurrentUser user,
+            @PathVariable("id") long productId,
+            @RequestBody(required = false) Map<String, Object> body) {
+        Set<VideoType> types = new LinkedHashSet<>();
+        Object requested = body == null ? null : body.get("types");
+        if (requested instanceof List<?> list) {
+            for (Object item : list) {
+                try {
+                    types.add(VideoType.fromWire(String.valueOf(item)));
+                } catch (IllegalArgumentException ex) {
+                    throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "VALIDATION_FAILED",
+                            "Unknown video type " + item);
+                }
+            }
+        }
+        int candidate = 0;
+        Object candidateValue = body == null ? null : body.get("candidate");
+        if (candidateValue instanceof Number number) {
+            candidate = number.intValue();
+        }
+        long runId = renderService.render(user, productId, types, candidate, null);
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(Map.of("runId", runId));
     }
 
     @PostMapping("/products/{id}/videos/script")

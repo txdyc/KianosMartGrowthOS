@@ -39,6 +39,7 @@ public class AssetEntity {
     private @Nullable Integer factVersion;
     private @Nullable String fileName;
     private @Nullable Long runId;
+    private @Nullable String renditionsJson;
     private OffsetDateTime createdAt;
 
     public Long getId() {
@@ -223,6 +224,15 @@ public class AssetEntity {
 
     public void setRunId(@Nullable Long runId) {
         this.runId = runId;
+    }
+
+    /** Video renditions (C5): {nomusic, poster} object keys. */
+    public @Nullable String getRenditionsJson() {
+        return renditionsJson;
+    }
+
+    public void setRenditionsJson(@Nullable String renditionsJson) {
+        this.renditionsJson = renditionsJson;
     }
 
     public OffsetDateTime getCreatedAt() {
