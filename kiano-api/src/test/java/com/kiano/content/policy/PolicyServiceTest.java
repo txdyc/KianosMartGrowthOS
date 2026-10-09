@@ -46,6 +46,8 @@ class PolicyServiceTest {
 
     @BeforeEach
     void seed() {
+        jdbcTemplate.update("delete from asset_review");
+        jdbcTemplate.update("delete from asset");
         jdbcTemplate.update("delete from store_policy");
         jdbcTemplate.update("delete from app_user");
         tenantId = jdbcTemplate.queryForObject("select id from tenant where slug = 'kianosmart'",

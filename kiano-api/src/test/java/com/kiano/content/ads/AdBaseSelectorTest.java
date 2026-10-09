@@ -55,6 +55,7 @@ class AdBaseSelectorTest {
 
     @BeforeEach
     void seed() {
+        jdbcTemplate.update("delete from asset_review");
         jdbcTemplate.update("delete from asset");
         jdbcTemplate.update("delete from source_media");
         jdbcTemplate.update("delete from product_category");

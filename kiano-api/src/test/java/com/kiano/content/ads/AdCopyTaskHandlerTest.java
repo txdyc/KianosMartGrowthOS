@@ -80,6 +80,7 @@ class AdCopyTaskHandlerTest {
     @BeforeEach
     void seed() {
         gateway.reset();
+        jdbcTemplate.update("delete from asset_review");
         jdbcTemplate.update("delete from product_profile");
         jdbcTemplate.update("delete from asset");
         jdbcTemplate.update("delete from product_fact_sheet");
