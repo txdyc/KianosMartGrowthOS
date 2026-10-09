@@ -194,7 +194,11 @@ public class AssetService {
         entity.setStatus((blocked ? AssetStatus.REJECTED : AssetStatus.IN_REVIEW).name());
         entity.setPrecheckJson(objectMapper.writeValueAsString(Map.of(
                 "flags", flags.stream().map(Enum::name).toList(), "metrics", Map.of())));
-        entity.setProvenanceJson(objectMapper.writeValueAsString(provenance));
+        // the cut travels with the asset: the review editor trims it and the
+        // price re-render compares it (C5 T10/T11)
+        Map<String, Object> stored = new LinkedHashMap<>(provenance == null ? Map.of() : provenance);
+        stored.put("edl", edl);
+        entity.setProvenanceJson(objectMapper.writeValueAsString(stored));
         entity.setFileName(fileName);
         entity.setRunId(job.runId());
         entity.setCreatedAt(OffsetDateTime.now());

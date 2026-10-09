@@ -15,7 +15,8 @@ class GallerySelectorTest {
 
     private static ReviewItem item(long id, String spec, String variant, int version) {
         return new ReviewItem(id, 1L, "SKU", "Name", spec, variant, version, "APPROVED", "IMAGE",
-                List.of(), Map.of(), null, null, null, null, null, null, null, null);
+                List.of(), Map.of(), null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null);
     }
 
     @Test

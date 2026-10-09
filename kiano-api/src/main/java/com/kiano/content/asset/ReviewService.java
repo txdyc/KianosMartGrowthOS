@@ -23,6 +23,7 @@ import com.kiano.content.video.VideoScriptText;
 import com.kiano.content.video.VideoType;
 import com.kiano.content.workflow.WorkflowRegistry;
 import com.kiano.content.workflow.WorkflowRegistry.ComfyWorkflowView;
+import com.kiano.content.video.VideoRenderService;
 import com.kiano.platform.audit.ActorType;
 import com.kiano.platform.audit.AuditEntry;
 import com.kiano.platform.audit.AuditLog;
@@ -31,13 +32,16 @@ import com.kiano.platform.queue.TaskQueue;
 import com.kiano.platform.storage.ObjectStorage;
 import com.kiano.platform.web.ApiException;
 import com.kiano.workerprotocol.JobStep;
+import java.math.BigDecimal;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.Optional;
 import org.jsoup.Jsoup;
 import org.jsoup.safety.Safelist;
@@ -63,9 +67,10 @@ public class ReviewService {
     private static final Map<String, Integer> SPEC_ORDER = Map.ofEntries(
             Map.entry("PAGE_MAIN", 0), Map.entry("PAGE_ANGLE", 1), Map.entry("PAGE_SCENE", 2),
             Map.entry("PAGE_INBOX", 3), Map.entry("PAGE_INFO", 4), Map.entry("PAGE_SPEC", 5),
-            Map.entry("AD_STATIC", 7), Map.entry("COPY_TITLE", 10), Map.entry("COPY_SHORT", 11),
+            Map.entry("AD_STATIC", 7), Map.entry("VIDEO_AD", 8), Map.entry("COPY_TITLE", 10),
+            Map.entry("COPY_SHORT", 11),
             Map.entry("COPY_LONG", 12), Map.entry("COPY_SEO", 13), Map.entry("COPY_GSHOP", 14),
-            Map.entry("COPY_WA", 15), Map.entry("AD_COPY", 16));
+            Map.entry("COPY_WA", 15), Map.entry("AD_COPY", 16), Map.entry("VIDEO_SCRIPT", 17));
     private static final Comparator<ReviewItem> ORDER = Comparator
             .comparing((ReviewItem item) -> item.flags().isEmpty())
             .thenComparing(ReviewItem::sku, Comparator.nullsLast(Comparator.naturalOrder()))
@@ -113,6 +118,7 @@ public class ReviewService {
     private final AssetService assetService;
     private final TextPrecheck textPrecheck;
     private final FactSheetService factSheetService;
+    private final VideoRenderService videoRenderService;
     private final SecureRandom random = new SecureRandom();
 
     public ReviewService(AssetMapper assetMapper, AssetReviewMapper reviewMapper,
@@ -121,7 +127,7 @@ public class ReviewService {
             WorkflowRegistry workflowRegistry, AuditLog auditLog, ObjectMapper objectMapper,
             JdbcTemplate jdbcTemplate, ApplicationEventPublisher events, TaskQueue queue,
             AssetService assetService, TextPrecheck textPrecheck,
-            FactSheetService factSheetService) {
+            FactSheetService factSheetService, VideoRenderService videoRenderService) {
         this.assetMapper = assetMapper;
         this.reviewMapper = reviewMapper;
         this.sourceMediaMapper = sourceMediaMapper;
@@ -138,6 +144,7 @@ public class ReviewService {
         this.assetService = assetService;
         this.textPrecheck = textPrecheck;
         this.factSheetService = factSheetService;
+        this.videoRenderService = videoRenderService;
     }
 
     public enum Decision {
@@ -151,7 +158,10 @@ public class ReviewService {
             String specCode, String variant, int version, String status, String kind,
             List<PrecheckFlag> flags, Map<String, Object> metrics, String imageUrl,
             String thumbUrl, String sourceThumbUrl, String sourceUrl, String fileName,
-            String textBody, Integer charCount, Integer factVersion) {
+            String textBody, Integer charCount, Integer factVersion,
+            // video assets (VIDEO_AD) only; null elsewhere
+            String videoUrl, String noMusicUrl, String posterUrl, BigDecimal durationS,
+            BigDecimal aiRatio, JsonNode edl, Map<String, String> sourceUrls) {
     }
 
     /** APPROVE/REJECT return the updated item; REGENERATE returns the new run. */
@@ -378,6 +388,21 @@ public class ReviewService {
         if ("AD_STATIC".equals(asset.getSpecCode())) {
             enqueueAdStaticRegenerate(asset);
             return null;
+        }
+        if ("VIDEO_AD".equals(asset.getSpecCode())) {
+            // re-plan that one type with the next window candidate; the music
+            // rotates because the version count just went up
+            JsonNode provenance = objectMapper.readTree(asset.getProvenanceJson());
+            int candidate = provenance.path("candidate").asInt(0) + 1;
+            VideoType type;
+            try {
+                type = VideoType.fromWire(asset.getVariant());
+            } catch (IllegalArgumentException ex) {
+                throw new ApiException(HttpStatus.CONFLICT, "REGENERATE_NOT_POSSIBLE",
+                        "Unknown video type variant " + asset.getVariant());
+            }
+            return videoRenderService.render(user, asset.getProductId(), Set.of(type), candidate,
+                    null);
         }
         String pipelineRef = jdbcTemplate.queryForObject(
                 "select pipeline_ref from asset_spec where code = ?", String.class,
@@ -610,17 +635,63 @@ public class ReviewService {
         String textBody = text ? asset.getTextBody() : null;
         Integer charCount = text && asset.getTextBody() != null
                 ? asset.getTextBody().replaceAll("<[^>]*>", "").strip().length() : null;
+        // video assets get playback renditions, the EDL and the footage preview URLs
+        boolean video = "VIDEO_AD".equals(asset.getSpecCode());
+        String videoUrl = video ? presign(asset.getObjectKey()) : null;
+        String noMusicUrl = null;
+        String posterUrl = null;
+        Map<String, String> sourceUrls = null;
+        JsonNode edl = null;
+        if (video) {
+            JsonNode renditions = asset.getRenditionsJson() == null ? null
+                    : objectMapper.readTree(asset.getRenditionsJson());
+            if (renditions != null) {
+                noMusicUrl = presignKey(renditions.path("nomusic").asString());
+                posterUrl = presignKey(renditions.path("poster").asString());
+            }
+            sourceUrls = shotUrls(tenantId, asset.getProductId());
+            edl = objectMapper.readTree(asset.getProvenanceJson()).path("edl");
+            if (edl != null && edl.isMissingNode()) {
+                edl = null;
+            }
+        }
         return new ReviewItem(asset.getId(), asset.getProductId(),
                 product == null ? null : product.sku(), product == null ? null : product.name(),
                 asset.getSpecCode(), asset.getVariant(), asset.getVersion(), asset.getStatus(),
                 asset.getKind(), flags, metrics, presign(asset.getObjectKey()),
                 presign(asset.getThumbObjectKey()), sourceThumbUrl, sourceUrl,
-                asset.getFileName(), textBody, charCount, asset.getFactVersion());
+                asset.getFileName(), textBody, charCount, asset.getFactVersion(),
+                videoUrl, noMusicUrl, posterUrl, asset.getDurationS(), asset.getAiRatio(), edl,
+                sourceUrls);
+    }
+
+    /** V1/V2/V3 preview URLs for the EDL editor (accepted footage of the product). */
+    private Map<String, String> shotUrls(long tenantId, long productId) {
+        Map<String, String> urls = new LinkedHashMap<>();
+        for (String shot : List.of("V1", "V2", "V3")) {
+            SourceMediaEntity media = sourceMediaMapper.selectOne(
+                    Wrappers.<SourceMediaEntity>lambdaQuery()
+                            .eq(SourceMediaEntity::getTenantId, tenantId)
+                            .eq(SourceMediaEntity::getProductId, productId)
+                            .eq(SourceMediaEntity::getShotCode, shot)
+                            .eq(SourceMediaEntity::getKind, "VIDEO")
+                            .eq(SourceMediaEntity::getStatus, "ACCEPTED")
+                            .orderByDesc(SourceMediaEntity::getId)
+                            .last("limit 1"));
+            if (media != null) {
+                urls.put(shot.toLowerCase(Locale.ROOT), presignKey(media.getObjectKey()));
+            }
+        }
+        return urls;
     }
 
     private long firstSourceMediaId(AssetEntity asset) {
         JsonNode ids = objectMapper.readTree(asset.getProvenanceJson()).path("sourceMediaIds");
         return ids.isArray() && !ids.isEmpty() && ids.get(0).isNumber() ? ids.get(0).asLong() : 0;
+    }
+
+    private @Nullable String presignKey(@Nullable String objectKey) {
+        return objectKey == null || objectKey.isBlank() ? null : presign(objectKey);
     }
 
     private @Nullable String presign(@Nullable String objectKey) {

@@ -83,6 +83,12 @@ abstract class VideoTestSupport {
     protected VideoCompositionCoordinator coordinator;
 
     @Autowired
+    protected com.kiano.content.asset.ReviewService reviewService;
+
+    @Autowired
+    protected VideoEdlController edlController;
+
+    @Autowired
     protected GenerationJobStore jobs;
 
     @Autowired
