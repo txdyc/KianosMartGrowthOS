@@ -1,7 +1,10 @@
 # Runs kiano-worker natively on Windows — the GPU and ComfyUI stay outside
 # Docker. Reads KIANO_WORKER_TOKEN (required) plus optional KIANO_WORKER_API /
-# KIANO_COMFY_URL from the repo .env, builds the jar when there is none, then
-# boots the worker profile from the same jar as the api.
+# KIANO_COMFY_URL / KIANO_FFMPEG_PATH from the repo .env, builds the jar when
+# there is none, then boots the worker profile from the same jar as the api.
+#
+# ffmpeg must be on PATH (or KIANO_FFMPEG_PATH set) for VIDEO_COMPOSE jobs;
+# without it this worker reports the FFMPEG capability as unavailable.
 #
 # The api side only ever sees KIANO_WORKER_TOKEN_SHA256 (docker-compose.yml);
 # the plain token lives in .env and in this process only.
@@ -58,6 +61,14 @@ if ($ComfyUrl -ne "") {
 } elseif ($envVars.ContainsKey("KIANO_COMFY_URL") -and $envVars["KIANO_COMFY_URL"] -ne "") {
     $env:KIANO_COMFY_URL = $envVars["KIANO_COMFY_URL"]
 }
+if ($envVars.ContainsKey("KIANO_FFMPEG_PATH") -and $envVars["KIANO_FFMPEG_PATH"] -ne "") {
+    $env:KIANO_FFMPEG_PATH = $envVars["KIANO_FFMPEG_PATH"]
+}
+
+$ffmpegPath = if ($env:KIANO_FFMPEG_PATH) { $env:KIANO_FFMPEG_PATH } else { "ffmpeg" }
+if ($null -eq (Get-Command $ffmpegPath -ErrorAction SilentlyContinue)) {
+    Write-Warning "ffmpeg not found ('$ffmpegPath') - VIDEO_COMPOSE jobs will not be leased. Install ffmpeg or set KIANO_FFMPEG_PATH in .env."
+}
 
 $jar = Get-ChildItem -Path (Join-Path $repo "kiano-api\target") -Filter "kiano-api-*.jar" `
     -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
@@ -78,7 +89,7 @@ if ($null -eq $jar) {
 
 $api = if ($env:KIANO_WORKER_API) { $env:KIANO_WORKER_API } else { "http://localhost:8081" }
 $comfy = if ($env:KIANO_COMFY_URL) { $env:KIANO_COMFY_URL } else { "http://127.0.0.1:8188" }
-Write-Host "worker: api=$api comfy=$comfy jar=$($jar.Name)"
+Write-Host "worker: api=$api comfy=$comfy ffmpeg=$ffmpegPath jar=$($jar.Name)"
 Write-Host "worker: Ctrl+C to stop"
 
 java "-Dloader.main=com.kiano.worker.KianoWorkerApplication" "-Dspring.profiles.active=worker" -jar $jar.FullName
