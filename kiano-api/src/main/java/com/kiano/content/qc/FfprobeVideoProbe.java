@@ -1,6 +1,8 @@
 package com.kiano.content.qc;
 
 import com.kiano.content.media.MediaProperties;
+import com.kiano.workerprotocol.FfprobeJsonParser;
+import com.kiano.workerprotocol.VideoInfo;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -56,7 +58,8 @@ public class FfprobeVideoProbe implements VideoProbe {
             Thread.currentThread().interrupt();
             throw new UnreadableMediaException("Interrupted while probing video");
         } catch (IOException | RuntimeException ex) {
-            throw new UnreadableMediaException("Cannot run ffprobe: " + ex.getMessage());
+            // the shared parser reports unreadable output as IllegalArgumentException
+            throw new UnreadableMediaException("Cannot read the video: " + ex.getMessage());
         }
     }
 

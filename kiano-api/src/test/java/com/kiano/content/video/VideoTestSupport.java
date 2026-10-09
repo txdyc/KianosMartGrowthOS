@@ -21,7 +21,6 @@ import com.kiano.content.policy.PolicySection;
 import com.kiano.content.policy.PolicyService;
 import com.kiano.content.policy.PolicyService.SectionText;
 import com.kiano.content.profile.ProductProfileService;
-import com.kiano.content.qc.VideoInfo;
 import com.kiano.content.qc.VideoProbe;
 import com.kiano.content.template.TemplateBootstrap;
 import com.kiano.content.video.h3.H3Properties;
@@ -32,6 +31,7 @@ import com.kiano.platform.auth.Role;
 import com.kiano.platform.storage.ObjectStorage;
 import com.kiano.workerprotocol.ExecutorType;
 import com.kiano.workerprotocol.JobStep;
+import com.kiano.workerprotocol.VideoInfo;
 import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
@@ -48,6 +48,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -219,6 +220,23 @@ abstract class VideoTestSupport {
         when(musicPicker.pick(anyLong(), any(), anyInt())).thenReturn(
                 Optional.of(new MusicPicker.MusicTrack(musicTrackId, "Upbeat Test",
                         "t" + tenantId + "/music/upbeat.mp3", 30.0)));
+    }
+
+    /**
+     * The suite shares one database: clear the fixture again so the next test
+     * class does not trip over the rows this one created.
+     */
+    @AfterEach
+    void cleanUpVideoFixture() {
+        jdbcTemplate.update("delete from asset_review");
+        jdbcTemplate.update("delete from asset");
+        jdbcTemplate.update("delete from generation_job");
+        jdbcTemplate.update("delete from generation_run");
+        jdbcTemplate.update("delete from source_media");
+        jdbcTemplate.update("delete from product_fact_sheet");
+        jdbcTemplate.update("delete from music_track");
+        jdbcTemplate.update("delete from product_profile");
+        jdbcTemplate.update("delete from product");
     }
 
     protected void script(VideoType type, int version) {

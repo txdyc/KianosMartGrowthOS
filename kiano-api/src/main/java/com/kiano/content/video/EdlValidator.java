@@ -1,6 +1,7 @@
 package com.kiano.content.video;
 
 import com.kiano.workerprotocol.Edl;
+import com.kiano.workerprotocol.EdlMath;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;

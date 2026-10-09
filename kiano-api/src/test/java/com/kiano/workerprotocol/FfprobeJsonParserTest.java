@@ -1,4 +1,4 @@
-package com.kiano.content.qc;
+package com.kiano.workerprotocol;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -51,7 +51,7 @@ class FfprobeJsonParserTest {
                 + "\"format\":{\"duration\":\"10.000000\"}}";
 
         assertThatThrownBy(() -> FfprobeJsonParser.parse(json))
-                .isInstanceOf(UnreadableMediaException.class);
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

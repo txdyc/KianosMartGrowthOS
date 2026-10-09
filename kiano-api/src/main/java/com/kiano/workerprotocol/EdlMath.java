@@ -1,6 +1,5 @@
-package com.kiano.content.video;
+package com.kiano.workerprotocol;
 
-import com.kiano.workerprotocol.Edl;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 

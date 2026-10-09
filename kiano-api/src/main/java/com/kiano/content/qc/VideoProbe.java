@@ -1,5 +1,6 @@
 package com.kiano.content.qc;
 
+import com.kiano.workerprotocol.VideoInfo;
 import java.nio.file.Path;
 
 /**

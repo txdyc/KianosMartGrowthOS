@@ -1,5 +1,6 @@
 package com.kiano.content.qc;
 
+import com.kiano.workerprotocol.VideoInfo;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.stereotype.Component;

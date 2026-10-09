@@ -1,6 +1,6 @@
 package com.kiano.worker;
 
-import com.kiano.content.qc.FfprobeJsonParser;
+import com.kiano.workerprotocol.FfprobeJsonParser;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;

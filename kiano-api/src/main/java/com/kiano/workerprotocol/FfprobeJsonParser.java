@@ -1,4 +1,4 @@
-package com.kiano.content.qc;
+package com.kiano.workerprotocol;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -7,6 +7,9 @@ import tools.jackson.databind.json.JsonMapper;
  * Parses ffprobe JSON output (-show_streams -show_format). Takes the first
  * video stream, swaps coded dimensions when rotation metadata says +-90 or
  * +-270, computes fps from avg_frame_rate "a/b" and reads format.duration.
+ * Shared with the worker, which probes its own outputs; unreadable output
+ * throws {@link IllegalArgumentException} and the api maps that to its own
+ * UNREADABLE_MEDIA error.
  */
 public final class FfprobeJsonParser {
 
@@ -29,16 +32,16 @@ public final class FfprobeJsonParser {
                 }
             }
             if (videoStream == null) {
-                throw new UnreadableMediaException("No video stream found in ffprobe output");
+                throw new IllegalArgumentException("No video stream found in ffprobe output");
             }
             int width = videoStream.path("width").asInt(-1);
             int height = videoStream.path("height").asInt(-1);
             if (width <= 0 || height <= 0) {
-                throw new UnreadableMediaException("ffprobe reported no dimensions for the video stream");
+                throw new IllegalArgumentException("ffprobe reported no dimensions for the video stream");
             }
             double duration = root.path("format").path("duration").asDouble(-1);
             if (duration < 0) {
-                throw new UnreadableMediaException("ffprobe reported no format duration");
+                throw new IllegalArgumentException("ffprobe reported no format duration");
             }
             return new VideoInfo(
                     rotationSwaps(videoStream) ? height : width,
@@ -46,10 +49,10 @@ public final class FfprobeJsonParser {
                     duration,
                     fps(videoStream.path("avg_frame_rate").asText("")),
                     hasAudio);
-        } catch (UnreadableMediaException ex) {
+        } catch (IllegalArgumentException ex) {
             throw ex;
         } catch (RuntimeException ex) {
-            throw new UnreadableMediaException("Cannot parse ffprobe output: " + ex.getMessage());
+            throw new IllegalArgumentException("Cannot parse ffprobe output: " + ex.getMessage());
         }
     }
 
@@ -80,7 +83,7 @@ public final class FfprobeJsonParser {
 
     private static double fps(String avgFrameRate) {
         if (avgFrameRate == null || avgFrameRate.isBlank()) {
-            throw new UnreadableMediaException("ffprobe reported no avg_frame_rate");
+            throw new IllegalArgumentException("ffprobe reported no avg_frame_rate");
         }
         String[] parts = avgFrameRate.split("/");
         double value;
@@ -89,15 +92,15 @@ public final class FfprobeJsonParser {
             if (parts.length > 1) {
                 double denominator = Double.parseDouble(parts[1]);
                 if (denominator == 0) {
-                    throw new UnreadableMediaException("avg_frame_rate has a zero denominator: " + avgFrameRate);
+                    throw new IllegalArgumentException("avg_frame_rate has a zero denominator: " + avgFrameRate);
                 }
                 value /= denominator;
             }
         } catch (NumberFormatException ex) {
-            throw new UnreadableMediaException("Cannot parse avg_frame_rate: " + avgFrameRate);
+            throw new IllegalArgumentException("Cannot parse avg_frame_rate: " + avgFrameRate);
         }
         if (value <= 0) {
-            throw new UnreadableMediaException("avg_frame_rate is not positive: " + avgFrameRate);
+            throw new IllegalArgumentException("avg_frame_rate is not positive: " + avgFrameRate);
         }
         return value;
     }

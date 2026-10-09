@@ -1,7 +1,7 @@
 package com.kiano.worker.ffmpeg;
 
-import com.kiano.content.video.EdlMath;
 import com.kiano.workerprotocol.Edl;
+import com.kiano.workerprotocol.EdlMath;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;

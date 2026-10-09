@@ -2,6 +2,7 @@ package com.kiano.content.qc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.kiano.workerprotocol.VideoInfo;
 import org.junit.jupiter.api.Test;
 
 /**

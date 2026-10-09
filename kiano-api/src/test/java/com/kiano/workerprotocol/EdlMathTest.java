@@ -1,8 +1,7 @@
-package com.kiano.content.video;
+package com.kiano.workerprotocol;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.kiano.workerprotocol.Edl;
 import com.kiano.workerprotocol.Edl.Audio;
 import com.kiano.workerprotocol.Edl.Kind;
 import com.kiano.workerprotocol.Edl.Segment;
