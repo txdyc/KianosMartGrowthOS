@@ -58,6 +58,8 @@ class AdPriceListenerTest {
         jdbcTemplate.update("delete from audit_log where tenant_id = ?", tenantId);
         jdbcTemplate.update("delete from asset_review");
         jdbcTemplate.update("delete from asset");
+        jdbcTemplate.update("delete from product_profile");
+        jdbcTemplate.update("delete from product_fact_sheet");
         jdbcTemplate.update("delete from product_category");
         jdbcTemplate.update("delete from product");
         jdbcTemplate.update("delete from category");

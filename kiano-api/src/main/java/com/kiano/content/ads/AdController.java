@@ -12,7 +12,9 @@ import java.util.List;
 import java.util.Map;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -22,7 +24,9 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Ad endpoints (C4a): POST .../ads/copy queues the four-hook LLM copy
  * generation, POST .../ads/render validates the render preconditions (409
- * AD_PRECONDITIONS when unmet) and enqueues the AD_RENDER task (202).
+ * AD_PRECONDITIONS when unmet) and enqueues the AD_RENDER task (202), and the
+ * /ads/exports trio requests, lists and downloads ad export ZIPs plus the
+ * replacement list for stale ad platform assets.
  */
 @RestController
 @RequestMapping("/api/v1/content")
@@ -33,14 +37,23 @@ public class AdController {
             boolean priceOnly) {
     }
 
+    /** Export request body: productIds optional (null/empty = all HERO products). */
+    public record ExportRequest(@Nullable List<Long> productIds) {
+    }
+
     private final AdRenderService renderService;
+    private final AdExportService exportService;
+    private final AdReplacementService replacementService;
     private final TaskQueue queue;
     private final FactSheetService factSheetService;
     private final ProductProfileService profileService;
 
-    public AdController(AdRenderService renderService, TaskQueue queue,
+    public AdController(AdRenderService renderService, AdExportService exportService,
+            AdReplacementService replacementService, TaskQueue queue,
             FactSheetService factSheetService, ProductProfileService profileService) {
         this.renderService = renderService;
+        this.exportService = exportService;
+        this.replacementService = replacementService;
         this.queue = queue;
         this.factSheetService = factSheetService;
         this.profileService = profileService;
@@ -103,5 +116,35 @@ public class AdController {
                 ? String.join(",", (List<String>) list) : "all";
         return "ad-render:" + productId + ":" + key + ":" + payload.get("frameCandidate")
                 + ":" + payload.get("priceOnly");
+    }
+
+    @PostMapping("/ads/exports")
+    @PreAuthorize("hasRole('OPERATOR')")
+    public ResponseEntity<Map<String, Object>> requestExport(CurrentUser user,
+            @RequestBody(required = false) ExportRequest request) {
+        long publicationId = exportService.request(user,
+                request == null ? null : request.productIds());
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(Map.of("publicationId", publicationId));
+    }
+
+    @GetMapping("/ads/exports")
+    @PreAuthorize("hasRole('VIEWER')")
+    public List<AdExportService.ExportView> exports(CurrentUser user) {
+        return exportService.list(user.tenantId());
+    }
+
+    @GetMapping("/ads/exports/{id}/download")
+    @PreAuthorize("hasRole('VIEWER')")
+    public ResponseEntity<Void> download(CurrentUser user, @PathVariable("id") long publicationId) {
+        java.net.URI uri = exportService.downloadUri(user.tenantId(), publicationId);
+        return ResponseEntity.status(HttpStatus.FOUND)
+                .location(uri).build();
+    }
+
+    @GetMapping("/ads/replacements")
+    @PreAuthorize("hasRole('VIEWER')")
+    public List<AdReplacementService.Replacement> replacements(CurrentUser user) {
+        return replacementService.list(user.tenantId());
     }
 }
