@@ -390,6 +390,10 @@ DRAFT ──自动预检──▶ IN_REVIEW ──APPROVE──▶ APPROVED ─�
 - 抠图用 ComfyUI（BiRefNet）。白底主图、多角度图和配件图改用确定性合成（代码合成，不经过 AI），以保证产品像素与实拍完全一致。
 - ComfyUI 执行器不绑定具体模型：工作流和输入绑定作为数据注册，并校验商用许可证白名单。C2 附带可商用的基线工作流；样板阶段定稿后注册新版本即可替换，不需要改代码。
 
+**C4 范围调整（2026-10-08 用户确认，详见 `docs/superpowers/plans/2026-10-08-c4a-ad-statics.md`）**
+- C4 拆分为 **C4a（本仓库实现，已完成）** 与 **C4b（kiano-connector 插件，在 KianosMart 仓库实现）**。
+- C4a 覆盖：4 个 hook（pricehook/problem/demo/trust）共 12 张广告静态图（素材规格 `AD_STATIC`）、按 hook 的 LLM 文案（`AD_COPY`，人工审核后可编辑）、demo 底图自动取 V1 视频最清晰帧、ZIP + `manifest.csv` 导出（publication `AD_EXPORT`）、改价后价格类广告自动 STALE/重渲染/满足条件自动通过、审核看板 REGENERATE 与替换清单。示意架构见 §7.3/§7.5/§10.2/§10.3。
+
 C6 之后：Kiano 核心迁移到 VPS，笔记本保留 kiano-worker；然后按 v1.2 继续 S2–S6。
 
 ## 15. 待确认事项

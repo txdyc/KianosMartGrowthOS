@@ -88,6 +88,14 @@ docker compose --profile app up -d --build            # 全容器运行
 - 政策文本只来自设置页（5 个分区）；政策未填完整时文案可生成和审核，但发布返回 `POLICY_INCOMPLETE`。
 - 发布写入（CommercePublisher）保存快照后可回滚；生产发布必须同商品同资产集已在 staging APPLIED（否则 409 `STAGING_REQUIRED`）；回滚检测 Woo 侧修改（`WOO_CHANGED_SINCE_PUBLISH`，除非 `force`）。
 
+**C4a 广告静态图（2026-10-08，规格 §7.3/§7.5/§10.2/§10.3）**
+- **广告图上除了文案（overlay/headline/primaryText）一切文字来自数据**：价格与划线价/Ends 由 `PriceDisplay`（Woo 镜像 + 渲染时刻判断促销是否进行中）渲染，COD/MoMo/配送来自政策设置分区的 `badge`，保修来自锁定事实；LLM 只写三字段，输出含价格即标记 `PRICE_IN_COPY`。
+- 广告文案走 `AD_COPY`（TEXT 资产，variant=hook），必须 APPROVED 才能渲染；demo 底图自动取 ACCEPTED 的 V1 视频最清晰帧（`FrameExtractor`），审核 REGENERATE 时换下一个候选帧。
+- 渲染成 12 张 `AD_STATIC`（价格不由 LLM 参与）；9:16 文字必须落在 y∈[269,1248]，装不下缩小字号最多两档，仍越界标记 `TEXT_OUTSIDE_SAFE_AREA` 但保存。
+- 只有 pricehook 的 3 个尺寸 `depends_on_price=true`；Woo 改价后这些版本 STALE/重渲染，新旧模板版本、AD_COPY、底图均相同且模板仍 APPROVED 时自动通过（审计 `AD_AUTO_APPROVED_PRICE_CHANGE`），否则进 IN_REVIEW。
+- 导出 = 每 SKU 12 张全 APPROVED 才打包（`manifest.csv` 严格列序 + UTF-8 BOM + RFC4180），缺图 SKU 进 `skipped`；替换清单只列出导出过且已 STALE 的旧版。
+- 硬规则重述：**价格/COD/MoMo/配送/保修一律模板渲染，LLM 永不输出这些文字。**
+
 **跨仓库**
 - kiano-connector 插件放在 KianosMart 仓库的 `wp-content/plugins/kiano-connector/`，按那个仓库的规则添加 bind mount。
 - 不修改 WordPress 核心和第三方插件。本地 Woo 的配置（例如 `WP_ENVIRONMENT_TYPE=local`）用 WP-CLI 写进本地 volume，不改 KianosMart 仓库的文件。
