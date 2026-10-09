@@ -99,6 +99,11 @@ test("dictionary covers every backend enum and error code", () => {
     "OVERLAY_OUT_OF_TIMELINE",
     "ASSET_NOT_EDITABLE",
     "MUSIC_LIBRARY_EMPTY",
+    "BATCH_HERO_NOT_ALLOWED",
+    "PRODUCT_IN_ACTIVE_BATCH",
+    "BATCH_STATE",
+    "SESSION_FINISHED",
+    "NOT_TOP_LEVEL",
   ];
   const licenseTypes = ["CC0", "ROYALTY_FREE_COMMERCIAL", "OWNED"];
   const musicMoods = ["upbeat", "uplifting", "calm", "energetic"];
@@ -116,6 +121,32 @@ test("dictionary covers every backend enum and error code", () => {
     "H3_CONTENT_REJECTED",
     "H3_FAILED",
   ];
+  const batchStages = [
+    "WAITING_SHOTS",
+    "IMAGES",
+    "FACTS_DRAFTING",
+    "AWAITING_FACT_LOCK",
+    "GENERATING",
+    "IN_REVIEW",
+    "STAGING",
+    "READY_FOR_PRODUCTION",
+    "PRODUCTION",
+    "DONE",
+    "BLOCKED",
+  ];
+  const batchBlockedReasons = [
+    "PRODUCT_GONE",
+    "NOW_HERO",
+    "SHOTS_RESHOOT",
+    "PIPELINE_FAILED",
+    "NO_FACT_SOURCES",
+    "FACT_DRAFT_FAILED",
+    "STAGING_PRODUCT_MISSING",
+    "PUBLISH_FAILED",
+    "POLICY_INCOMPLETE",
+    "INTERNAL",
+  ];
+  const batchStatuses = ["RUNNING", "PAUSED", "DONE", "CANCELLED"];
 
   const required: MessageKey[] = [
     ...qcReasons.map((r) => `qc.${r}` as MessageKey),
@@ -138,6 +169,12 @@ test("dictionary covers every backend enum and error code", () => {
     ...h3Backends.map((b) => `h3.backend.${b}` as MessageKey),
     ...h3Outcomes.map((o) => `h3.outcome.${o}` as MessageKey),
     ...h3Reasons.map((r) => `h3.reason.${r}` as MessageKey),
+    ...batchStages.map((s) => `batch.stage.${s}` as MessageKey),
+    ...batchBlockedReasons.map((r) => `batch.blocked.${r}` as MessageKey),
+    ...batchStatuses.map((s) => `batch.status.${s}` as MessageKey),
+    "batch.detail.reviewVerdict.ON_TARGET",
+    "batch.detail.reviewVerdict.OVER",
+    "batch.detail.reviewVerdict.NOT_ENOUGH_DATA",
     "review.filters.VIDEO",
     "error.UNSUPPORTED_FILE_TYPE.heic",
   ];

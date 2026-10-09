@@ -437,3 +437,109 @@ export interface AdRenderStatus {
   lastError: string | null;
   finishedAt?: string | null;
 }
+
+/** Lifecycle of a content batch (content_batch.status, C6). */
+export type BatchStatus = "RUNNING" | "PAUSED" | "DONE" | "CANCELLED";
+
+/** Stage of one batch item (content.batch.BatchStage, C6). */
+export type BatchStage =
+  | "WAITING_SHOTS"
+  | "IMAGES"
+  | "FACTS_DRAFTING"
+  | "AWAITING_FACT_LOCK"
+  | "GENERATING"
+  | "IN_REVIEW"
+  | "STAGING"
+  | "READY_FOR_PRODUCTION"
+  | "PRODUCTION"
+  | "DONE"
+  | "BLOCKED";
+
+/** One batch row of GET /api/v1/content/batches (BatchService.BatchView). */
+export interface BatchView {
+  id: number;
+  name: string;
+  status: BatchStatus;
+  nightOnly: boolean;
+  itemCount: number;
+  createdAt: string;
+  finishedAt: string | null;
+}
+
+/** One SKU of the creation page (BatchService.Candidate). */
+export interface BatchCandidate {
+  productId: number;
+  sku: string;
+  name: string;
+  shotsComplete: boolean;
+  activeBatchId: number | null;
+}
+
+/** One SKU row of the dashboard (BatchProgressService.ItemRow). */
+export interface BatchItemRow {
+  productId: number;
+  sku: string | null;
+  name: string | null;
+  stage: BatchStage;
+  imageLane: BatchStage;
+  factLane: BatchStage;
+  blockedReason: string | null;
+  blockedDetails: Record<string, unknown>;
+  stagingStatus: string | null;
+  productionStatus: string | null;
+}
+
+/** The three estimates (EtaCalculator.Eta). */
+export interface BatchEta {
+  gpuSeconds: number;
+  llmSeconds: number;
+  humanSeconds: number;
+  gpuFinishAt: string;
+}
+
+/** Per-SKU review time (ReviewSessionService.ReviewTimeStats). */
+export interface ReviewTimeStats {
+  skuCount: number;
+  avgFactSeconds: number;
+  avgAssetSeconds: number;
+  avgTotalSeconds: number;
+  p90TotalSeconds: number;
+  targetSeconds: number;
+}
+
+/** GET /api/v1/content/batches/{id}/progress. */
+export interface BatchProgress {
+  batch: BatchView;
+  stageCounts: Partial<Record<BatchStage, number>>;
+  items: BatchItemRow[];
+  eta: BatchEta;
+  llmCostUsd: number;
+  gpuSecondsUsed: number;
+  reviewTime: ReviewTimeStats;
+}
+
+/** One SKU of the fact workbench queue (BatchQueueService.FactQueueItem). */
+export interface FactQueueItem {
+  productId: number;
+  sku: string;
+  name: string;
+  draft: FactSheetView;
+  plateUrls: string[];
+  promoUrls: string[];
+  fieldSources: Record<string, FieldSource>;
+}
+
+/** One SKU of the review workbench queue (BatchQueueService.ReviewQueueItem). */
+export interface ReviewQueueItem {
+  productId: number;
+  sku: string;
+  name: string;
+  assets: ReviewItem[];
+  facts: FactsJson | null;
+}
+
+/** POST /batches/{id}/publish-production (BatchPublishService.ProductionResult). */
+export interface ProductionResult {
+  queued: number[];
+  rejected: Record<string, string>;
+}

@@ -12,6 +12,7 @@ import type { NeedsRepublishItem } from "@/lib/types";
 type NavHref =
   | "/products"
   | "/import"
+  | "/batches"
   | "/review"
   | "/reshoot"
   | "/ads"
@@ -46,6 +47,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const links: { href: NavHref; label: string }[] = [
     { href: "/products", label: t("nav.products") },
     { href: "/import", label: t("nav.import") },
+    { href: "/batches", label: t("nav.batches") },
     { href: "/review", label: t("nav.review") },
     { href: "/reshoot", label: t("nav.reshoot") },
     { href: "/ads", label: t("nav.ads") },
