@@ -54,6 +54,16 @@ class FfprobeJsonParserTest {
                 .isInstanceOf(UnreadableMediaException.class);
     }
 
+    @Test
+    void parser_detectsAudioStreamPresence() throws IOException {
+        VideoInfo withAudio = FfprobeJsonParser.parse(fixture("portrait-sidedata.json"));
+        assertThat(withAudio.hasAudio()).isTrue();
+        VideoInfo noAudio = FfprobeJsonParser.parse(fixture("portrait-tag.json"));
+        assertThat(noAudio.hasAudio()).isFalse();
+        VideoInfo landscape = FfprobeJsonParser.parse(fixture("landscape.json"));
+        assertThat(landscape.hasAudio()).isTrue();
+    }
+
     private String fixture(String name) throws IOException {
         try (InputStream in = getClass().getResourceAsStream("/ffprobe/" + name)) {
             return new String(Objects.requireNonNull(in).readAllBytes(), StandardCharsets.UTF_8);

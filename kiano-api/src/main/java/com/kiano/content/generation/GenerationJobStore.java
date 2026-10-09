@@ -6,6 +6,8 @@ import com.kiano.workerprotocol.JobStep;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -100,13 +102,56 @@ public class GenerationJobStore {
 
     /** Marks a leased job SUCCEEDED; empty when the lease was lost or reaped. */
     public Optional<GenerationJob> complete(long jobId, String workerId, Object output, double gpuSeconds) {
+        return complete(jobId, workerId, output, gpuSeconds, null);
+    }
+
+    /** Marks a leased job SUCCEEDED with its cost; empty when the lease was lost or reaped. */
+    public Optional<GenerationJob> complete(long jobId, String workerId, Object output, double gpuSeconds,
+            @Nullable BigDecimal costUsd) {
         String outputJson = objectMapper.writeValueAsString(output == null ? Map.of() : output);
         return jdbcTemplate.query(
                 "update generation_job set status='SUCCEEDED', output_json=?::jsonb, gpu_seconds=?, "
-                        + "lease_owner=null, lease_expires_at=null, heartbeat_at=null, finished_at=now() "
+                        + "cost_usd=?, lease_owner=null, lease_expires_at=null, heartbeat_at=null, "
+                        + "finished_at=now() "
                         + "where id=? and status='LEASED' and lease_owner=? and lease_expires_at > now() "
                         + "returning *",
-                mapper, outputJson, gpuSeconds, jobId, workerId).stream().findFirst();
+                mapper, outputJson, gpuSeconds, costUsd, jobId, workerId).stream().findFirst();
+    }
+
+    /**
+     * Parks a leased job back to QUEUED for an external service: the lease
+     * attempt is refunded, {@code external_ref} is written and the job is
+     * retried after the delay (H3 API polling in Task 8a).
+     */
+    public boolean park(long jobId, String workerId, String externalRef, Duration delay) {
+        return jdbcTemplate.update(
+                "update generation_job set status='QUEUED', run_after = now() + (? * interval '1 second'), "
+                        + "attempts = greatest(attempts - 1, 0), external_ref = ?, error = null, "
+                        + "lease_owner = null, lease_expires_at = null, heartbeat_at = null "
+                        + "where id = ? and status = 'LEASED' and lease_owner = ? and lease_expires_at > now()",
+                delay.toSeconds(), externalRef, jobId, workerId) > 0;
+    }
+
+    /**
+     * Cancels a queued, waiting or currently leased job. A leased job is
+     * cancelled with its lease cleared, so the worker's late complete or
+     * heartbeat fails as lease-lost and the result is dropped.
+     */
+    public boolean cancel(long tenantId, long jobId, String reason) {
+        return jdbcTemplate.update(
+                "update generation_job set status='CANCELLED', error=?, finished_at=now(), "
+                        + "lease_owner = null, lease_expires_at = null, heartbeat_at = null "
+                        + "where tenant_id = ? and id = ? and status in ('QUEUED','LEASED','WAITING_EXECUTOR')",
+                reason, tenantId, jobId) > 0;
+    }
+
+    /** Sum of completed job costs for one executor since the given instant (budget checks). */
+    public java.math.BigDecimal costSince(long tenantId, ExecutorType executor, Instant since) {
+        java.math.BigDecimal total = jdbcTemplate.queryForObject(
+                "select coalesce(sum(cost_usd), 0) from generation_job "
+                        + "where tenant_id = ? and executor = ? and status = 'SUCCEEDED' and finished_at >= ?",
+                java.math.BigDecimal.class, tenantId, executor.name(), java.sql.Timestamp.from(since));
+        return total == null ? java.math.BigDecimal.ZERO : total;
     }
 
     /**
@@ -241,6 +286,7 @@ public class GenerationJobStore {
                     rs.getInt("attempts"),
                     rs.getInt("max_attempts"),
                     rs.getString("lease_owner"),
+                    rs.getString("external_ref"),
                     leaseExpires == null ? null : leaseExpires.toInstant(),
                     outputJson == null ? null : readJson(outputJson),
                     gpuSeconds,

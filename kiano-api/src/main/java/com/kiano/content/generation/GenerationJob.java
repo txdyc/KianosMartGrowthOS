@@ -23,6 +23,7 @@ public record GenerationJob(
         int attempts,
         int maxAttempts,
         String leaseOwner,
+        String externalRef,
         Instant leaseExpiresAt,
         JsonNode output,
         Double gpuSeconds,

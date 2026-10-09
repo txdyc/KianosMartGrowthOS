@@ -3,6 +3,7 @@ package com.kiano.content.generation;
 import com.kiano.platform.storage.ObjectStorage;
 import com.kiano.platform.web.ApiException;
 import com.kiano.workerprotocol.CompleteRequest;
+import com.kiano.workerprotocol.ContentTypes;
 import com.kiano.workerprotocol.ExecutorType;
 import com.kiano.workerprotocol.FailRequest;
 import com.kiano.workerprotocol.HeartbeatResponse;
@@ -37,43 +38,56 @@ import tools.jackson.databind.JsonNode;
 @RequestMapping("/api/v1/worker")
 public class WorkerController {
 
-    private static final String PNG = "image/png";
-
     private final GenerationJobStore jobs;
     private final GenerationRunStore runs;
     private final WorkerStatusStore workerStatus;
     private final ObjectStorage storage;
     private final WorkerAuthProperties properties;
     private final ObjectProvider<JobCompletionListener> completionListener;
+    private final ObjectProvider<JobFailureListener> failureListener;
 
     public WorkerController(GenerationJobStore jobs, GenerationRunStore runs, WorkerStatusStore workerStatus,
             ObjectStorage storage, WorkerAuthProperties properties,
-            ObjectProvider<JobCompletionListener> completionListener) {
+            ObjectProvider<JobCompletionListener> completionListener,
+            ObjectProvider<JobFailureListener> failureListener) {
         this.jobs = jobs;
         this.runs = runs;
         this.workerStatus = workerStatus;
         this.storage = storage;
         this.properties = properties;
         this.completionListener = completionListener;
+        this.failureListener = failureListener;
     }
 
     @PostMapping("/lease")
     public ResponseEntity<LeaseResponse> lease(@RequestBody LeaseRequest request) {
         workerStatus.touch(request.workerId(), request.capabilities(), request.unavailable());
-        if (request.unavailable() != null) {
-            for (ExecutorType executor : request.unavailable()) {
+        // H3 API jobs run inside the api; workers must never lease them.
+        Set<ExecutorType> capabilities = withoutH3(request.capabilities());
+        Set<ExecutorType> unavailable = withoutH3(request.unavailable());
+        if (!unavailable.isEmpty()) {
+            for (ExecutorType executor : unavailable) {
                 jobs.markWaiting(executor);
             }
         }
-        if (request.capabilities() != null) {
-            for (ExecutorType executor : request.capabilities()) {
+        if (!capabilities.isEmpty()) {
+            for (ExecutorType executor : capabilities) {
                 jobs.releaseWaiting(executor);
             }
         }
         // GPU work is single-concurrency: max is always treated as 1.
-        Optional<GenerationJob> leased = jobs.lease(request.workerId(), request.capabilities());
+        Optional<GenerationJob> leased = jobs.lease(request.workerId(), capabilities);
         return leased.map(job -> ResponseEntity.ok(toLeaseResponse(job))).orElseGet(
                 () -> ResponseEntity.noContent().build());
+    }
+
+    private static Set<ExecutorType> withoutH3(Set<ExecutorType> reported) {
+        if (reported == null || reported.isEmpty()) {
+            return new HashSet<>();
+        }
+        Set<ExecutorType> filtered = new HashSet<>(reported);
+        filtered.remove(ExecutorType.H3);
+        return filtered;
     }
 
     private LeaseResponse toLeaseResponse(GenerationJob job) {
@@ -83,8 +97,9 @@ public class WorkerController {
         }
         Map<String, URI> outputUploadUrls = new LinkedHashMap<>();
         for (Map.Entry<String, JsonNode> entry : job.input().path("outputs").properties()) {
+            String key = entry.getValue().asString();
             outputUploadUrls.put(entry.getKey(),
-                    storage.presignPut(entry.getValue().asString(), properties.getUrlTtl(), PNG));
+                    storage.presignPut(key, properties.getUrlTtl(), ContentTypes.forKey(key)));
         }
         JobPayload payload = new JobPayload(job.id(), job.step(), job.variant(), job.executor(), job.input());
         return new LeaseResponse(payload, inputUrls, outputUploadUrls);
@@ -160,6 +175,10 @@ public class WorkerController {
                 request.executorUnavailable());
         if (failed.isEmpty()) {
             throw leaseLost(id);
+        }
+        if (failed.get().status() == JobStatus.FAILED) {
+            // Only final failures reach the listeners (H3 escalation in Task 8a).
+            failureListener.orderedStream().forEach(listener -> listener.onFailed(failed.get()));
         }
         runs.refreshStatus(failed.get().runId());
         return ResponseEntity.ok().build();

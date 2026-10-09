@@ -2,6 +2,7 @@ package com.kiano.worker;
 
 import com.kiano.imaging.ImageCodec;
 import com.kiano.workerprotocol.CompleteRequest;
+import com.kiano.workerprotocol.ContentTypes;
 import com.kiano.workerprotocol.ExecutorType;
 import com.kiano.workerprotocol.FailRequest;
 import com.kiano.workerprotocol.JobPayload;
@@ -54,17 +55,20 @@ public class WorkerLoop {
     private final WorkerClient client;
     private final WorkerProperties properties;
     private final List<GenerationExecutor> executors;
+    private final OutputProbe outputProbe;
 
-    public WorkerLoop(WorkerClient client, WorkerProperties properties, List<GenerationExecutor> executors) {
+    public WorkerLoop(WorkerClient client, WorkerProperties properties, List<GenerationExecutor> executors,
+            OutputProbe outputProbe) {
         this.client = client;
         this.properties = properties;
         this.executors = List.copyOf(executors);
+        this.outputProbe = outputProbe;
     }
 
     @Autowired
     public WorkerLoop(WorkerClient client, WorkerProperties properties,
-            ObjectProvider<GenerationExecutor> executors) {
-        this(client, properties, executors.orderedStream().toList());
+            ObjectProvider<GenerationExecutor> executors, OutputProbe outputProbe) {
+        this(client, properties, executors.orderedStream().toList(), outputProbe);
     }
 
     /** Scheduled entry point: keeps draining jobs while there is work. */
@@ -199,18 +203,63 @@ public class WorkerLoop {
         for (Map.Entry<String, Path> entry : outputs.entrySet()) {
             String name = entry.getKey();
             Path file = entry.getValue();
-            byte[] bytes = Files.readAllBytes(file);
-            BufferedImage image = readImage(bytes);
-            client.upload(lease.outputUploadUrls().get(name), file, "image/png");
-            files.add(new OutputFile(name,
-                    job.input().path("outputs").path(name).asString(),
-                    image == null ? null : image.getWidth(),
-                    image == null ? null : image.getHeight(),
-                    null,
-                    sha256Hex(bytes)));
+            String objectKey = job.input().path("outputs").path(name).asString();
+            String contentType = ContentTypes.forKey(objectKey);
+            client.upload(lease.outputUploadUrls().get(name), file, contentType);
+            Dimensions dims = dimensions(file, contentType);
+            files.add(new OutputFile(name, objectKey, dims.width(), dims.height(),
+                    dims.duration(), sha256Hex(file)));
         }
         if (!client.complete(job.id(), new CompleteRequest(files, result.gpuSeconds()))) {
             LOG.warn("Lease on job {} was lost while completing; the job is no longer ours", job.id());
+        }
+    }
+
+    /**
+     * Videos are measured with ffprobe (duration + display size); images are
+     * decoded for their pixel size. sha256 is streamed separately, so the
+     * whole file is never buffered just to hash it.
+     */
+    private Dimensions dimensions(Path file, String contentType) {
+        if ("video/mp4".equals(contentType)) {
+            OutputProbe.VideoOutput video = outputProbe.probe(file);
+            return new Dimensions(video.width(), video.height(), video.durationSeconds());
+        }
+        byte[] bytes;
+        try {
+            bytes = Files.readAllBytes(file);
+        } catch (IOException ex) {
+            return new Dimensions(null, null, null);
+        }
+        BufferedImage image = readImage(bytes);
+        return new Dimensions(image == null ? null : image.getWidth(),
+                image == null ? null : image.getHeight(), null);
+    }
+
+    private record Dimensions(@Nullable Integer width, @Nullable Integer height,
+            @Nullable Double duration) {
+    }
+
+    private static BufferedImage readImage(byte[] bytes) {
+        try {
+            return ImageCodec.read(bytes);
+        } catch (RuntimeException ex) {
+            return null; // not a decodable image (e.g. a video in later steps)
+        }
+    }
+
+    /** Streaming SHA-256 so large videos are not buffered just to be hashed. */
+    private static String sha256Hex(Path file) {
+        try (java.io.InputStream in = Files.newInputStream(file)) {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] buffer = new byte[64 * 1024];
+            int read;
+            while ((read = in.read(buffer)) > 0) {
+                digest.update(buffer, 0, read);
+            }
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (IOException | NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("Cannot hash output " + file, ex);
         }
     }
 
@@ -222,22 +271,6 @@ public class WorkerLoop {
         Thread.interrupted();
         LOG.warn("Lease on job {} was lost mid-flight; discarding the result", jobId);
         return true;
-    }
-
-    private static BufferedImage readImage(byte[] bytes) {
-        try {
-            return ImageCodec.read(bytes);
-        } catch (RuntimeException ex) {
-            return null; // not a decodable image (e.g. a video in later steps)
-        }
-    }
-
-    private static String sha256Hex(byte[] bytes) {
-        try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
-        } catch (NoSuchAlgorithmException ex) {
-            throw new IllegalStateException("SHA-256 not available", ex);
-        }
     }
 
     private static String describe(Throwable ex) {

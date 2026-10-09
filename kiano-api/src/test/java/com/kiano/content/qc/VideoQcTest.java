@@ -14,31 +14,31 @@ class VideoQcTest {
 
     @Test
     void portrait1080p30_v1_15s_ok() {
-        assertThat(qc.evaluate("V1", new VideoInfo(1080, 1920, 15, 30))).isEmpty();
+        assertThat(qc.evaluate("V1", new VideoInfo(1080, 1920, 15, 30, true))).isEmpty();
     }
 
     @Test
     void landscape_notPortrait() {
-        assertThat(qc.evaluate("V1", new VideoInfo(1920, 1080, 15, 30)))
+        assertThat(qc.evaluate("V1", new VideoInfo(1920, 1080, 15, 30, false)))
                 .containsExactly(QcReason.NOT_PORTRAIT);
     }
 
     @Test
     void v1_25s_durationOutOfRange_butV2_25s_ok() {
-        assertThat(qc.evaluate("V1", new VideoInfo(1080, 1920, 25, 30)))
+        assertThat(qc.evaluate("V1", new VideoInfo(1080, 1920, 25, 30, true)))
                 .containsExactly(QcReason.DURATION_OUT_OF_RANGE);
-        assertThat(qc.evaluate("V2", new VideoInfo(1080, 1920, 25, 30))).isEmpty();
+        assertThat(qc.evaluate("V2", new VideoInfo(1080, 1920, 25, 30, false))).isEmpty();
     }
 
     @Test
     void fps60_outOfRange() {
-        assertThat(qc.evaluate("V1", new VideoInfo(1080, 1920, 15, 60)))
+        assertThat(qc.evaluate("V1", new VideoInfo(1080, 1920, 15, 60, true)))
                 .containsExactly(QcReason.FPS_OUT_OF_RANGE);
     }
 
     @Test
     void hd720_lowResolution() {
-        assertThat(qc.evaluate("V1", new VideoInfo(720, 1280, 15, 30)))
+        assertThat(qc.evaluate("V1", new VideoInfo(720, 1280, 15, 30, false)))
                 .containsExactly(QcReason.LOW_RESOLUTION);
     }
 }

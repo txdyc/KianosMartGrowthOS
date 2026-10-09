@@ -1,6 +1,7 @@
 package com.kiano.content.generation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -8,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.kiano.TestcontainersConfiguration;
 import com.kiano.platform.storage.ObjectStorage;
+import com.kiano.workerprotocol.ContentTypes;
 import com.kiano.workerprotocol.ExecutorType;
 import com.kiano.workerprotocol.JobStep;
 import java.util.ArrayList;
@@ -61,6 +63,9 @@ class WorkerControllerTest {
     @Autowired
     private RecordingCompletionListener listener;
 
+    @Autowired
+    private RecordingFailureListener failureListener;
+
     @Value("${kiano.storage.public-endpoint}")
     private String publicEndpoint;
 
@@ -87,6 +92,11 @@ class WorkerControllerTest {
         RecordingCompletionListener recordingCompletionListener() {
             return new RecordingCompletionListener();
         }
+
+        @Bean
+        RecordingFailureListener recordingFailureListener() {
+            return new RecordingFailureListener();
+        }
     }
 
     static class RecordingCompletionListener implements JobCompletionListener {
@@ -95,6 +105,15 @@ class WorkerControllerTest {
         @Override
         public void onSucceeded(GenerationJob job) {
             succeeded.add(job);
+        }
+    }
+
+    static class RecordingFailureListener implements JobFailureListener {
+        final List<GenerationJob> failed = new ArrayList<>();
+
+        @Override
+        public void onFailed(GenerationJob job) {
+            failed.add(job);
         }
     }
 
@@ -223,6 +242,69 @@ class WorkerControllerTest {
         assertThat(job.attempts()).isZero();
     }
 
+    @Test
+    void finalFailure_notifiesFailureListener_retryableAndWaitingDoNot() throws Exception {
+        long retryable = createJob(JobStep.CUTOUT, "P1");
+        jobs.lease("w-1", Set.of(ExecutorType.COMFYUI));
+        mockMvc.perform(workerAuth(post("/api/v1/worker/jobs/{id}/fail", retryable))
+                        .header("X-Worker-Id", "w-1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"error\":\"boom\",\"retryable\":true,\"executorUnavailable\":false}"))
+                .andExpect(status().isOk());
+        assertThat(jobStatus(retryable)).isEqualTo(JobStatus.QUEUED);
+        assertThat(failureListener.failed).isEmpty();
+
+        long waiting = createJob(JobStep.CUTOUT, "P2");
+        jobs.lease("w-1", Set.of(ExecutorType.COMFYUI));
+        mockMvc.perform(workerAuth(post("/api/v1/worker/jobs/{id}/fail", waiting))
+                        .header("X-Worker-Id", "w-1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"error\":\"comfy offline\",\"retryable\":true,\"executorUnavailable\":true}"))
+                .andExpect(status().isOk());
+        assertThat(jobStatus(waiting)).isEqualTo(JobStatus.WAITING_EXECUTOR);
+        assertThat(failureListener.failed).isEmpty();
+
+        long fatal = createJob(JobStep.CUTOUT, "P3");
+        jobs.lease("w-1", Set.of(ExecutorType.COMFYUI));
+        mockMvc.perform(workerAuth(post("/api/v1/worker/jobs/{id}/fail", fatal))
+                        .header("X-Worker-Id", "w-1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"error\":\"CUTOUT_EMPTY\",\"retryable\":false,\"executorUnavailable\":false}"))
+                .andExpect(status().isOk());
+        assertThat(jobStatus(fatal)).isEqualTo(JobStatus.FAILED);
+        assertThat(failureListener.failed).hasSize(1);
+        assertThat(failureListener.failed.get(0).id()).isEqualTo(fatal);
+    }
+
+    @Test
+    void lease_workerAdvertisingH3_neverGetsH3Job() throws Exception {
+        long h3 = createJob(JobStep.H3_CLIP_API, "demo");
+        // the worker claims H3, but the api runs H3 jobs itself
+        lease("w-1", "[\"H3\",\"FFMPEG\"]", "[]")
+                .andExpect(status().isNoContent());
+        assertThat(jobStatus(h3)).isEqualTo(JobStatus.QUEUED);
+    }
+
+    @Test
+    void leaseResponse_mp4Output_presignedAsVideoMp4() throws Exception {
+        long id = createVideoJob("demo");
+        lease("w-1", "[\"FFMPEG\"]", "[]")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.job.executor").value("FFMPEG"))
+                .andExpect(jsonPath("$.job.step").value("VIDEO_COMPOSE"))
+                .andExpect(jsonPath("$.outputUploadUrls.video", startsWith(publicEndpoint)));
+        assertThat(jobs.find(tenantId, id).orElseThrow().status()).isEqualTo(JobStatus.LEASED);
+    }
+
+    @Test
+    void contentTypes_unknownExtension_throws() {
+        assertThat(ContentTypes.forKey("t1/x.png")).isEqualTo("image/png");
+        assertThat(ContentTypes.forKey("t1/x.jpg")).isEqualTo("image/jpeg");
+        assertThat(ContentTypes.forKey("t1/x.mp4")).isEqualTo("video/mp4");
+        assertThatThrownBy(() -> ContentTypes.forKey("t1/x.bin"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     private org.springframework.test.web.servlet.ResultActions lease(String workerId, String capabilities,
             String unavailable) throws Exception {
         return mockMvc.perform(workerAuth(post("/api/v1/worker/lease"))
@@ -250,6 +332,13 @@ class WorkerControllerTest {
         return jobs.create(tenantId, productId, runId, step, variant,
                 Map.of("inputs", Map.of("image", prefix + "/in.png"),
                         "outputs", Map.of("cutout", prefix + "/out.png")),
+                List.of());
+    }
+
+    private long createVideoJob(String variant) {
+        return jobs.create(tenantId, productId, runId, JobStep.VIDEO_COMPOSE, variant,
+                Map.of("inputs", Map.of("v1", prefix + "/v1.mp4"),
+                        "outputs", Map.of("video", prefix + "/out.mp4")),
                 List.of());
     }
 

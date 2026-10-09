@@ -18,26 +18,34 @@ public final class FfprobeJsonParser {
     public static VideoInfo parse(String json) {
         try {
             JsonNode root = MAPPER.readTree(json);
+            JsonNode videoStream = null;
+            boolean hasAudio = false;
             for (JsonNode stream : root.path("streams")) {
-                if (!"video".equals(stream.path("codec_type").asText(""))) {
-                    continue;
+                String codecType = stream.path("codec_type").asText("");
+                if ("audio".equals(codecType)) {
+                    hasAudio = true;
+                } else if (videoStream == null && "video".equals(codecType)) {
+                    videoStream = stream;
                 }
-                int width = stream.path("width").asInt(-1);
-                int height = stream.path("height").asInt(-1);
-                if (width <= 0 || height <= 0) {
-                    throw new UnreadableMediaException("ffprobe reported no dimensions for the video stream");
-                }
-                double duration = root.path("format").path("duration").asDouble(-1);
-                if (duration < 0) {
-                    throw new UnreadableMediaException("ffprobe reported no format duration");
-                }
-                return new VideoInfo(
-                        rotationSwaps(stream) ? height : width,
-                        rotationSwaps(stream) ? width : height,
-                        duration,
-                        fps(stream.path("avg_frame_rate").asText("")));
             }
-            throw new UnreadableMediaException("No video stream found in ffprobe output");
+            if (videoStream == null) {
+                throw new UnreadableMediaException("No video stream found in ffprobe output");
+            }
+            int width = videoStream.path("width").asInt(-1);
+            int height = videoStream.path("height").asInt(-1);
+            if (width <= 0 || height <= 0) {
+                throw new UnreadableMediaException("ffprobe reported no dimensions for the video stream");
+            }
+            double duration = root.path("format").path("duration").asDouble(-1);
+            if (duration < 0) {
+                throw new UnreadableMediaException("ffprobe reported no format duration");
+            }
+            return new VideoInfo(
+                    rotationSwaps(videoStream) ? height : width,
+                    rotationSwaps(videoStream) ? width : height,
+                    duration,
+                    fps(videoStream.path("avg_frame_rate").asText("")),
+                    hasAudio);
         } catch (UnreadableMediaException ex) {
             throw ex;
         } catch (RuntimeException ex) {

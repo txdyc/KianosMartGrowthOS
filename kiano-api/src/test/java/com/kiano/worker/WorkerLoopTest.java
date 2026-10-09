@@ -9,6 +9,7 @@ import com.kiano.workerprotocol.JobPayload;
 import com.kiano.workerprotocol.JobStep;
 import com.kiano.workerprotocol.LeaseRequest;
 import com.kiano.workerprotocol.LeaseResponse;
+import com.kiano.workerprotocol.OutputFile;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Files;
@@ -38,7 +39,7 @@ class WorkerLoopTest {
         client.heartbeatOk = false;
         WorkerProperties properties = properties(Duration.ofMillis(20));
         WorkerLoop loop = new WorkerLoop(client, properties,
-                List.of(new EchoExecutor(Duration.ofMillis(300))));
+                List.of(new EchoExecutor(Duration.ofMillis(300))), probeStub());
 
         assertThat(loop.runOnce()).isTrue();
 
@@ -55,7 +56,7 @@ class WorkerLoopTest {
         FakeClient client = new FakeClient();
         client.nextLease = null;
         WorkerLoop loop = new WorkerLoop(client, properties(Duration.ofHours(1)),
-                List.of(new EchoExecutor(Duration.ZERO), new UnavailableExecutor()));
+                List.of(new EchoExecutor(Duration.ZERO), new UnavailableExecutor()), probeStub());
 
         assertThat(loop.runOnce()).isFalse();
 
@@ -70,17 +71,35 @@ class WorkerLoopTest {
         FakeClient client = new FakeClient();
         client.nextLease = leaseOf(1L);
         WorkerLoop loop = new WorkerLoop(client, properties(Duration.ofHours(1)),
-                List.of(new EchoExecutor(Duration.ZERO)));
+                List.of(new EchoExecutor(Duration.ZERO)), probeStub());
         loop.runOnce();
         assertThat(listChildren()).isEmpty();
 
         client.nextLease = leaseOf(2L);
         client.heartbeatOk = true;
         loop = new WorkerLoop(client, properties(Duration.ofHours(1)),
-                List.of(new FailingExecutor(new ExecutorException("boom", false))));
+                List.of(new FailingExecutor(new ExecutorException("boom", false))), probeStub());
         loop.runOnce();
         assertThat(client.fails).hasSize(1);
         assertThat(listChildren()).isEmpty();
+    }
+
+    @Test
+    void workerComplete_mp4_reportsDurationAndSize() throws Exception {
+        FakeClient client = new FakeClient();
+        client.nextLease = videoLease(3L);
+        OutputProbe probe = file -> new OutputProbe.VideoOutput(12.5, 1080, 1920);
+        WorkerLoop loop = new WorkerLoop(client, properties(Duration.ofHours(1)),
+                List.of(new EchoExecutor(Duration.ZERO, ExecutorType.FFMPEG)), probe);
+
+        assertThat(loop.runOnce()).isTrue();
+
+        assertThat(client.completes).hasSize(1);
+        OutputFile video = client.completes.get(0).outputs().get(0);
+        assertThat(video.durationS()).isEqualTo(12.5);
+        assertThat(video.width()).isEqualTo(1080);
+        assertThat(video.height()).isEqualTo(1920);
+        assertThat(video.sha256()).isNotBlank();
     }
 
     private List<String> listChildren() throws IOException {
@@ -102,10 +121,24 @@ class WorkerLoopTest {
     private static LeaseResponse leaseOf(long jobId) {
         JobPayload payload = new JobPayload(jobId, JobStep.WHITE_MAIN, "A", ExecutorType.COMPOSITE,
                 tools.jackson.databind.json.JsonMapper.builder().build().readTree(
-                        "{\"inputs\":{\"image\":\"k\"},\"outputs\":{\"image\":\"out\"}}"));
+                        "{\"inputs\":{\"image\":\"k\"},\"outputs\":{\"image\":\"out.png\"}}"));
         return new LeaseResponse(payload,
                 Map.of("image", URI.create("fake://bucket/worker-it/in/image.png")),
-                Map.of("image", URI.create("fake://bucket/worker-it/out/image.png")));
+                Map.of("image", URI.create("fake://bucket/worker-it/out/out.png")));
+    }
+
+    private static LeaseResponse videoLease(long jobId) {
+        JobPayload payload = new JobPayload(jobId, JobStep.VIDEO_COMPOSE, "demo", ExecutorType.FFMPEG,
+                tools.jackson.databind.json.JsonMapper.builder().build().readTree(
+                        "{\"inputs\":{\"image\":\"k\"},\"outputs\":{\"video\":\"out.mp4\"}}"));
+        return new LeaseResponse(payload,
+                Map.of("image", URI.create("fake://bucket/worker-it/in/v1.mp4")),
+                Map.of("video", URI.create("fake://bucket/worker-it/out/out.mp4")));
+    }
+
+    /** Stub probe: real probing is exercised by the mp4 test above. */
+    private static OutputProbe probeStub() {
+        return file -> new OutputProbe.VideoOutput(1.0, 1, 1);
     }
 
     /** Records every call; downloads serve prepared bytes, uploads are captured. */
@@ -158,14 +191,20 @@ class WorkerLoopTest {
     static class EchoExecutor implements GenerationExecutor {
 
         private final Duration sleep;
+        private final ExecutorType type;
 
         EchoExecutor(Duration sleep) {
+            this(sleep, ExecutorType.COMPOSITE);
+        }
+
+        EchoExecutor(Duration sleep, ExecutorType type) {
             this.sleep = sleep;
+            this.type = type;
         }
 
         @Override
         public ExecutorType type() {
-            return ExecutorType.COMPOSITE;
+            return type;
         }
 
         @Override
@@ -179,7 +218,8 @@ class WorkerLoopTest {
                 if (!sleep.isZero()) {
                     Thread.sleep(sleep.toMillis());
                 }
-                Files.copy(ctx.inputs().get("image"), ctx.outputs().get("image"),
+                Path out = ctx.outputs().values().iterator().next();
+                Files.copy(ctx.inputs().get("image"), out,
                         java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                 return new JobResult(0.5);
             } catch (InterruptedException ex) {

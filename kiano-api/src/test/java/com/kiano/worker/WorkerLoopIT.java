@@ -149,7 +149,8 @@ class WorkerLoopIT {
         properties.setId("it-worker");
         properties.setWorkDir(Files.createTempDirectory("kiano-worker-it"));
         properties.setHeartbeatInterval(Duration.ofSeconds(30));
-        return new WorkerLoop(new HttpWorkerClient(properties), properties, List.of(executor));
+        return new WorkerLoop(new HttpWorkerClient(properties), properties, List.of(executor),
+                new FfprobeOutputProbe(properties));
     }
 
     /** Delegates to a lambda body; used for the failure-path tests. */

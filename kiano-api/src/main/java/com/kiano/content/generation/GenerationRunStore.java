@@ -28,18 +28,23 @@ public class GenerationRunStore {
     }
 
     public long create(long tenantId, long productId, @Nullable Long createdBy) {
+        return create(tenantId, productId, createdBy, "IMAGE_SET");
+    }
+
+    public long create(long tenantId, long productId, @Nullable Long createdBy, String kind) {
         GeneratedKeyHolder keyHolder = new GeneratedKeyHolder();
         jdbcTemplate.update(con -> {
             PreparedStatement ps = con.prepareStatement(
                     "insert into generation_run (tenant_id, product_id, kind, status, created_by) "
-                            + "values (?, ?, 'IMAGE_SET', 'RUNNING', ?)",
+                            + "values (?, ?, ?, 'RUNNING', ?)",
                     new String[]{"id"});
             ps.setLong(1, tenantId);
             ps.setLong(2, productId);
+            ps.setString(3, kind);
             if (createdBy == null) {
-                ps.setNull(3, java.sql.Types.BIGINT);
+                ps.setNull(4, java.sql.Types.BIGINT);
             } else {
-                ps.setLong(3, createdBy);
+                ps.setLong(4, createdBy);
             }
             return ps;
         }, keyHolder);

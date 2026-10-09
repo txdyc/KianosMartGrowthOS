@@ -217,7 +217,7 @@ class MediaImportServiceTest {
     void video_v1_acceptedViaProbe() throws Exception {
         Path file = tempDir.resolve("MG-FAN16_V1.mp4");
         Files.writeString(file, "fake video payload ".repeat(20), StandardCharsets.UTF_8);
-        when(videoProbe.probe(any())).thenReturn(new VideoInfo(1080, 1920, 12.0, 30.0));
+        when(videoProbe.probe(any())).thenReturn(new VideoInfo(1080, 1920, 12.0, 30.0, true));
 
         ImportResult result = service.importFile(operator, "MG-FAN16_V1.mp4", file, "video/mp4");
 

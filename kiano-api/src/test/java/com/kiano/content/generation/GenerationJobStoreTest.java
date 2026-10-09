@@ -7,6 +7,7 @@ import com.kiano.TestcontainersConfiguration;
 import com.kiano.platform.web.ApiException;
 import com.kiano.workerprotocol.ExecutorType;
 import com.kiano.workerprotocol.JobStep;
+import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
@@ -304,5 +305,81 @@ class GenerationJobStoreTest {
 
         assertThat(workerStatus.list()).extracting(WorkerStatusStore.WorkerStatusView::workerId)
                 .containsExactlyInAnyOrder("w1", "w-stale");
+    }
+
+    @Test
+    void park_requeuesWithDelay_refundsAttempt_keepsExternalRef() {
+        long jobId = createJob(JobStep.CUTOUT, "P1");
+        jobs.lease("worker-1", Set.of(ExecutorType.COMFYUI));
+
+        assertThat(jobs.park(jobId, "worker-1", "ext-task-1", Duration.ofSeconds(90))).isTrue();
+
+        GenerationJob job = jobs.find(tenantId, jobId).orElseThrow();
+        assertThat(job.status()).isEqualTo(JobStatus.QUEUED);
+        assertThat(job.attempts()).isZero(); // the lease attempt is refunded
+        assertThat(job.externalRef()).isEqualTo("ext-task-1");
+        assertThat(job.leaseOwner()).isNull();
+        Instant runAfter = jdbcTemplate.queryForObject(
+                "select run_after from generation_job where id = ?", Timestamp.class, jobId).toInstant();
+        assertThat(Duration.between(Instant.now(), runAfter).toSeconds()).isBetween(85L, 95L);
+        // not held by that worker → false
+        assertThat(jobs.park(jobId, "worker-2", "x", Duration.ofSeconds(1))).isFalse();
+    }
+
+    @Test
+    void cancel_leasedJob_laterCompleteFailsAsLeaseLost() {
+        long jobId = createJob(JobStep.CUTOUT, "P1");
+        jobs.lease("worker-1", Set.of(ExecutorType.COMFYUI));
+
+        assertThat(jobs.cancel(tenantId, jobId, "stopped by user")).isTrue();
+
+        GenerationJob job = jobs.find(tenantId, jobId).orElseThrow();
+        assertThat(job.status()).isEqualTo(JobStatus.CANCELLED);
+        assertThat(job.leaseOwner()).isNull();
+        assertThat(job.error()).isEqualTo("stopped by user");
+        // the worker's late complete fails: the lease is gone
+        assertThat(jobs.complete(jobId, "worker-1", Map.of(), 0.0)).isEmpty();
+        // cancelling a terminal job is a no-op
+        assertThat(jobs.cancel(tenantId, jobId, "again")).isFalse();
+    }
+
+    @Test
+    void cancel_queuedOrWaiting_jobCancelled() {
+        long queued = createJob(JobStep.CUTOUT, "P1");
+        long waiting = createJob(JobStep.CUTOUT, "P2");
+        jobs.markWaiting(ExecutorType.COMFYUI);
+        assertThat(jobs.find(tenantId, waiting).orElseThrow().status()).isEqualTo(JobStatus.WAITING_EXECUTOR);
+
+        assertThat(jobs.cancel(tenantId, queued, "skip")).isTrue();
+        assertThat(jobs.cancel(tenantId, waiting, "skip")).isTrue();
+        assertThat(jobs.find(tenantId, queued).orElseThrow().status()).isEqualTo(JobStatus.CANCELLED);
+        assertThat(jobs.find(tenantId, waiting).orElseThrow().status()).isEqualTo(JobStatus.CANCELLED);
+    }
+
+    @Test
+    void complete_recordsCost_andCostSinceSumsPerExecutor() {
+        long first = createJob(JobStep.WHITE_MAIN, "main");
+        jobs.lease("w", Set.of(ExecutorType.COMPOSITE));
+        jobs.complete(first, "w", Map.of(), 1.0, new BigDecimal("0.25"));
+        long second = createJob(JobStep.WHITE_MAIN, "main2");
+        jobs.lease("w", Set.of(ExecutorType.COMPOSITE));
+        jobs.complete(second, "w", Map.of(), 1.0, new BigDecimal("0.75"));
+
+        assertThat(jobs.costSince(tenantId, ExecutorType.COMPOSITE,
+                Instant.now().minus(Duration.ofMinutes(5)))).isEqualByComparingTo("1.00");
+        // the legacy 4-arg complete stores no cost and never shows up in the sum
+        long noCost = createJob(JobStep.WHITE_MAIN, "main3");
+        jobs.lease("w", Set.of(ExecutorType.COMPOSITE));
+        jobs.complete(noCost, "w", Map.of(), 1.0);
+        assertThat(jobs.costSince(tenantId, ExecutorType.COMPOSITE,
+                Instant.now().minus(Duration.ofMinutes(5)))).isEqualByComparingTo("1.00");
+        // H3 jobs are budgeted separately from GPU executors
+        long h3 = createJob(JobStep.H3_CLIP_API, "demo");
+        jobs.lease("h3-runner", Set.of(ExecutorType.H3));
+        jobs.complete(h3, "h3-runner", Map.of(), 0.0, new BigDecimal("0.40"));
+        assertThat(jobs.costSince(tenantId, ExecutorType.H3,
+                Instant.now().minus(Duration.ofMinutes(5)))).isEqualByComparingTo("0.40");
+        assertThat(jobs.costSince(tenantId, ExecutorType.COMPOSITE,
+                Instant.now().minus(Duration.ofMinutes(5)))).isEqualByComparingTo("1.00");
     }
 }

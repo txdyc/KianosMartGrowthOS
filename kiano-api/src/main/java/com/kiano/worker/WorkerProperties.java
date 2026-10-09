@@ -25,6 +25,9 @@ public class WorkerProperties {
     private Path workDir = Path.of(System.getProperty("java.io.tmpdir"), "kiano-worker");
     private Duration heartbeatInterval = Duration.ofSeconds(30);
 
+    /** Path to the ffprobe executable used to measure produced videos. */
+    private String ffprobePath = "ffprobe";
+
     public String getApiBaseUrl() {
         return apiBaseUrl;
     }
@@ -63,6 +66,14 @@ public class WorkerProperties {
 
     public void setHeartbeatInterval(Duration heartbeatInterval) {
         this.heartbeatInterval = heartbeatInterval;
+    }
+
+    public String getFfprobePath() {
+        return ffprobePath;
+    }
+
+    public void setFfprobePath(String ffprobePath) {
+        this.ffprobePath = ffprobePath;
     }
 
     private static String defaultId() {
