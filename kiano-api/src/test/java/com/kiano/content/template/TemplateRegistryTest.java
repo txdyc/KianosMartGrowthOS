@@ -60,9 +60,9 @@ class TemplateRegistryTest {
         bootstrap.bootstrapAll();
         Integer rows = jdbcTemplate.queryForObject(
                 "select count(*) from template where tenant_id = ?", Integer.class, tenantId);
-        // the seven C3 v1 baselines: INFO, SPEC, FACT_PROMPT, POLICY_BLOCK,
-        // COPY_PROMPT, COPY_LONG, COPY_SHORT
-        assertThat(rows).isEqualTo(7);
+        // the twelve C3/C4a v1 baselines: seven content templates plus the ad
+        // copy prompt and the four AD_* overlay templates
+        assertThat(rows).isEqualTo(12);
     }
 
     @Test

@@ -13,5 +13,7 @@ public enum PrecheckFlag {
     TOO_LONG,
     PRICE_IN_COPY,
     MISSING_PLACEHOLDER,
-    POLICY_PENDING
+    POLICY_PENDING,
+    // Ad-static flags (C4a)
+    TEXT_OUTSIDE_SAFE_AREA
 }

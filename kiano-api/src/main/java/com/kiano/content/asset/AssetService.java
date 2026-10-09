@@ -2,6 +2,7 @@ package com.kiano.content.asset;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.kiano.content.ads.AdRenderMeta;
 import com.kiano.content.copy.CopyAssembler;
 import com.kiano.content.generation.GenerationJob;
 import com.kiano.content.generation.GenerationJobStore;
@@ -172,6 +173,19 @@ public class AssetService {
     public AssetView createImageFromBytes(long tenantId, long productId, String specCode,
             String variant, byte[] png, int factVersion, Map<String, Object> provenance,
             String sku) {
+        return createImageFromBytes(tenantId, productId, specCode, variant, png, factVersion,
+                provenance, sku, null);
+    }
+
+    /**
+     * Ad-static variant: the file name uses the hook as angle segment and the
+     * base's source type as type segment, and the depends_on_price / price
+     * snapshot columns are written (pricehook only).
+     */
+    @Transactional
+    public AssetView createImageFromBytes(long tenantId, long productId, String specCode,
+            String variant, byte[] png, int factVersion, Map<String, Object> provenance,
+            String sku, AdRenderMeta adMeta) {
         BufferedImage image = ImageCodec.read(png);
         byte[] full = ImageCodec.jpeg(image, JPEG_QUALITY);
         byte[] thumb = ImageCodec.thumbnailJpeg(image, THUMBNAIL_LONG_SIDE);
@@ -183,9 +197,17 @@ public class AssetService {
         storage.put(fullKey, full, "image/jpeg");
         storage.put(thumbKey, thumb, "image/jpeg");
 
-        String angle = "PAGE_SPEC".equals(specCode) ? "page-spec" : "page-info";
-        String fileName = AssetFileName.format(sku, angle, "real",
-                image.getWidth(), image.getHeight(), version, "jpg");
+        String fileName;
+        if (adMeta != null) {
+            String hook = variant.contains("-")
+                    ? variant.substring(0, variant.indexOf('-')) : variant;
+            fileName = AssetFileName.format(sku, hook, adMeta.fileType(),
+                    image.getWidth(), image.getHeight(), version, "jpg");
+        } else {
+            String angle = "PAGE_SPEC".equals(specCode) ? "page-spec" : "page-info";
+            fileName = AssetFileName.format(sku, angle, "real",
+                    image.getWidth(), image.getHeight(), version, "jpg");
+        }
         AssetEntity entity = new AssetEntity();
         entity.setTenantId(tenantId);
         entity.setProductId(productId);
@@ -204,6 +226,10 @@ public class AssetService {
         entity.setFactVersion(factVersion);
         entity.setFileName(fileName);
         entity.setCreatedAt(OffsetDateTime.now());
+        if (adMeta != null) {
+            entity.setDependsOnPrice(adMeta.dependsOnPrice());
+            entity.setPriceSnapshot(adMeta.priceSnapshot());
+        }
         mapper.insert(entity);
 
         mapper.update(null, new LambdaUpdateWrapper<AssetEntity>()
