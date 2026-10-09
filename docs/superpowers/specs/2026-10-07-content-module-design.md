@@ -60,18 +60,21 @@ KianosMart 每个 SKU 目前只有一张宣传图和实物。网站商品页、G
 │   ├ platform : 认证、tenant、任务队列(PG)、审计、对象存储          │
 │   ├ commerce : Commerce Port → WooCommerceAdapter                │
 │   └ content  : 流水线编排、素材库、审核、发布                     │
-│        执行器（api 内）: LlmExecutor, TemplateRenderer, H3Executor │
+│        执行器（api 内）: LlmExecutor, TemplateRenderer, H3JobRunner │
+│          （H3JobRunner = H3 服务商接口：提交 → 暂存 → 轮询）        │
 │ PostgreSQL 16 │ MinIO（S3 兼容）                                  │
 └───────────────────────────▲──────────────────────────────────────┘
                             │ HTTPS：租用任务 / 回报结果 / 预签名 URL
 ┌───────────────────────────┴──────────────────────────────────────┐
 │ kiano-worker（同一代码库，profile=worker，笔记本 Windows 上运行）   │
 │   执行器: ComfyUIExecutor → ComfyUI (Windows 原生, RTX 4090 16GB)   │
+│           （本地 H3 图生视频 = H3_I2V 工作流，经 ComfyUIExecutor）  │
 │           FfmpegExecutor                                         │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
 - ComfyUI 原生运行在 Windows 上，不放进 Docker，以避开 WSL2 GPU 直通的复杂度。
+- H3 有两个后端：**本地**（`H3_CLIP_LOCAL`，executor=COMFYUI，由 worker 的 ComfyUIExecutor 执行注册并激活的 `H3_I2V` 工作流，只记录 `gpu_seconds`）和**服务商接口**（`H3_CLIP_API`，executor=H3，由 api 内的 H3JobRunner 异步执行，记录 `cost_usd`）。默认 `LOCAL_FIRST`，本地超时或失败时升级到接口，两者都不可用时改用实拍。
 - kiano-worker 从第一天起就是独立进程，**只主动拉取任务**。迁移到 VPS 后，worker 从笔记本通过 HTTPS 拉取 VPS 上的任务，笔记本不需要暴露任何端口，执行器代码也不用改。
 - 较轻的执行器（LLM、模板渲染、H3 API 调用）运行在 kiano-api 内；需要 GPU 或大量本地文件处理的（ComfyUI、FFmpeg）运行在 worker 内。
 
@@ -395,13 +398,21 @@ DRAFT ──自动预检──▶ IN_REVIEW ──APPROVE──▶ APPROVED ─�
 - C4a 覆盖：4 个 hook（pricehook/problem/demo/trust）共 12 张广告静态图（素材规格 `AD_STATIC`）、按 hook 的 LLM 文案（`AD_COPY`，人工审核后可编辑）、demo 底图自动取 V1 视频最清晰帧、ZIP + `manifest.csv` 导出（publication `AD_EXPORT`）、改价后价格类广告自动 STALE/重渲染/满足条件自动通过、审核看板 REGENERATE 与替换清单。示意架构见 §7.3/§7.5/§10.2/§10.3。
 - **C4b 验收标准（2026-10-09 通过）**：插件的验收标准是——区块结账的 COD 订单进入 `kiano-awaiting`，并带有完整的触点 meta（vid/sid/first/last touch）、GhanaPost GPS 地址与 E.164 电话号码；改拒收后库存回补且不计入 Analytics。
 
+**C5 确认的决定（2026-10-09 用户确认，详见 `docs/superpowers/plans/2026-10-09-c5-short-videos.md`）**
+- H3 接口后端**先行、用模拟回放**：`H3Client` 是端口，契约测试用 WireMock 按"提交 → 轮询 → 下载"回放；单价和预算在配置中，key 只在 `.env` 的 `MINIMAX_API_KEY`。用户提供 API 文档和 key 后执行 C5 计划附录 A 的真实对接，在此之前 `kiano.content.video.h3.api.enabled=false`。
+- H3 有两个后端，优先本地，可以退到接口：`kiano.content.video.h3.backend` 默认 `LOCAL_FIRST`（另有 `LOCAL_ONLY`、`API_ONLY`、`OFF`）。本地任务从创建起超过 `local-max-wait`（默认 2 小时）或最终失败时升级到接口；都没有可用后端时开场一律用实拍，AI 占比为 0。本地权重的许可证由用户在安装时核实（C5 计划附录 B），计划不预设任何新的许可证标识。
+- 字幕文字由 LLM 按视频生成、再人工审核：新增 `VIDEO_SCRIPT` 资产，每种视频类型一个 variant。
+- 按规则自动剪辑，审核时可以手动调整每段实拍的入点和出点，保存后生成新版本。
+- Kiano 内建曲库：上传曲目必须填写许可证信息，只接受 `CC0`、`ROYALTY_FREE_COMMERCIAL`、`OWNED`；每条视频同时输出无配乐版本，供 TikTok 使用平台的商用曲库。
+- C5 相对规格的有意扩展：`VIDEO_SCRIPT`（TEXT）与 `LlmPurpose.VIDEO_SCRIPT`、`music_track` 表、`asset.renditions_json`、`generation_job.external_ref`、`comfy_workflow.code` 允许 `H3_I2V`、`JobFailureListener`（任务最终 FAILED 时通知 H3 升级）、广告导出可以选择包含视频。
+
 C6 之后：Kiano 核心迁移到 VPS，笔记本保留 kiano-worker；然后按 v1.2 继续 S2–S6。
 
 ## 15. 待确认事项
 
-1. MiniMax H3 API 的访问方式、配额和单价（用于 `cost_usd` 和预算）。
+1. MiniMax H3 API 的访问方式、配额和单价（用于 `cost_usd` 和预算）。**做法已确认（2026-10-09）**：H3 有本地 ComfyUI 和服务商接口两个后端，优先本地（`LOCAL_FIRST`）；接口先行、用模拟回放（WireMock）实现和验证，真实对接见 C5 计划附录 A，本地工作流注册见附录 B。接口 key 只在 `.env`，单价和预算在配置中。
 2. ~~文案和事实草稿使用的 LLM 提供商~~ → **已确认（2026-10-08）：LLM 提供商可配置**（Anthropic / OpenAI 兼容，如 DeepSeek），按任务路由，没有配置的任务用 `.env` 的 Claude 默认，默认模型 `claude-opus-5-5`，经 LlmGateway 接入并记录成本；细节见 `docs/superpowers/specs/2026-10-08-llm-provider-routing-design.md`。
 3. ~~站点使用的 SEO 插件~~ → **已确认（2026-10-08）：Rank Math**（发布时写 `rank_math_title` / `rank_math_description`）。
 4. ~~staging 环境~~ → **已确认（2026-10-08）：KianosMart 本地 Docker**；生产发布前必须先在 staging 发布成功。
-5. 免版税曲库和商用字体的选择。
+5. ~~免版税曲库~~ → **已确认（2026-10-09）：Kiano 内建曲库**——曲目上传时必须登记许可证信息，只接受 `CC0`、`ROYALTY_FREE_COMMERCIAL`、`OWNED`（需要署名的许可如 CC-BY 不允许，广告中无法署名）；曲目只能停用不能删除；每条视频同时输出无配乐版本，供 TikTok 使用平台的商用曲库。商用字体仍待确认。
 6. 店铺政策的最终文本（配送时效、COD 范围、保修、退货），供 POLICY_BLOCK 使用。**做法已确认（2026-10-08）**：Kiano 内做政策设置页，文本由用户填写；未填完整时文案可生成和审核，但不允许发布。最终文本仍待用户提供。

@@ -19,7 +19,7 @@ KianosMart（Ghana 的 WooCommerce 店铺，专营 Morgan Electronics，约 150 
 - `kiano-web`：Next.js（App Router）+ TypeScript + Tailwind，pnpm，Vitest
 - PostgreSQL 16（同时用作任务队列，`FOR UPDATE SKIP LOCKED`）、MinIO（S3 兼容，用 AWS SDK v2 访问）
 - C2 起：`kiano-worker`（同一代码库，profile=worker）在笔记本上拉取 GPU 任务；ComfyUI 原生装在 Windows 上
-  （RTX 4090 Laptop，**16 GB 显存**），不进 Docker；视频片段用 MiniMax H3 API
+  （RTX 4090 Laptop，**16 GB 显存**），不进 Docker；C5 起视频片段优先用本地 H3（`H3_I2V` 工作流，经 worker 的 ComfyUIExecutor），不可用时退到 MiniMax H3 接口（api 内的 H3JobRunner），两者都不可用时用实拍代替
 
 ## 目录结构
 
@@ -95,6 +95,15 @@ docker compose --profile app up -d --build            # 全容器运行
 - 只有 pricehook 的 3 个尺寸 `depends_on_price=true`；Woo 改价后这些版本 STALE/重渲染，新旧模板版本、AD_COPY、底图均相同且模板仍 APPROVED 时自动通过（审计 `AD_AUTO_APPROVED_PRICE_CHANGE`），否则进 IN_REVIEW。
 - 导出 = 每 SKU 12 张全 APPROVED 才打包（`manifest.csv` 严格列序 + UTF-8 BOM + RFC4180），缺图 SKU 进 `skipped`；替换清单只列出导出过且已 STALE 的旧版。
 - 硬规则重述：**价格/COD/MoMo/配送/保修一律模板渲染，LLM 永不输出这些文字。**
+
+**C5 短视频（2026-10-09，规格 §7.4/§9.3/§11/§12）**
+- **视频上的一切文字由模板渲染成 1080×1920 的 PNG 再叠加**（hook 句、卖点字幕、结尾卡的价格/COD/MoMo/"Order on WhatsApp"），禁止 ffmpeg `drawtext`/libass；字幕 PNG 透明、结尾卡不透明，9:16 安全区与 C4 相同（y∈[269,1248]）。
+- **AI 占比在保存和完成两处拦截**：`ai_ratio = H3 片段秒数 ÷ 视频总秒数`，规划与手动保存 EDL 时返回 422 `AI_RATIO_EXCEEDED`；合成完成后超标的资产直接记为 REJECTED（审计 `VIDEO_BLOCKED_AI_RATIO`），不进入审核。
+- **H3 只做开场的运镜和氛围**：首帧只能是已审核通过的 PAGE_SCENE / PAGE_MAIN，提示词由版本化模板 `H3_PROMPT_*` 确定性生成（I2VA 结构，两个后端共用同一份），**不出现人手、不演示功能、不出现文字**；H3 自带音频一律丢弃。
+- **H3 失败时依次升级**：本地（worker 的 ComfyUIExecutor 执行注册并激活的 `H3_I2V`，`h3.backend` 默认 `LOCAL_FIRST`）→ 接口（api 的 H3JobRunner，`h3.api.enabled=false` 时跳过；接口先用 WireMock 回放验证，真实对接见 C5 计划附录 A）→ 实拍代替（AI 占比归零，`h3.attempts` 与 `h3Fallback.reason` 记录全过程）。视频不会因为 H3 而卡住。worker **不能**领取 `executor=H3` 的任务（接口侧）。
+- **曲库许可证白名单**：`license_type` 只能是 `CC0`、`ROYALTY_FREE_COMMERCIAL`、`OWNED`，`license_source` 和 `license_proof` 必填；需要署名的许可（CC-BY）不允许上传（广告中无法署名）；曲目只能停用（RETIRED）不能删除，因为已有视频的 provenance 引用它们。每条视频同时输出 `_nomusic` 无配乐版本，供 TikTok 使用平台商业曲库。
+- 剪辑按配方（hook 3s → body → captions 5s → endcard 4s，总 15–30 秒），审核页可手动调整 REAL 段入/出点后重新合成；改价后只重渲染结尾卡，只有价格变化（脚本、EDL、配乐、模板、H3 都没变）时自动通过（审计 `VIDEO_AUTO_APPROVED_PRICE_CHANGE`），否则进入审核。
+- 文件名 `{SKU}_{type}_{real|mixed}_1080x1920_v{n}.mp4`（含 H3 段为 `mixed`，否则 `real`）；广告导出可选包含视频（ZIP 含 mp4 与 `_nomusic.mp4`，manifest 每个文件一行）。
 
 **跨仓库**
 - kiano-connector 插件放在 KianosMart 仓库的 `wp-content/plugins/kiano-connector/`，按那个仓库的规则添加 bind mount。

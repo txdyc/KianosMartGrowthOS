@@ -10,6 +10,8 @@ KianosMart（Ghana 的 WooCommerce 店铺，专营 Morgan Electronics，约 150 
 - JDK 21（后端本地开发）
 - Node 22 + pnpm 10（前端本地开发；`corepack enable` 即可）
 - 本地开发后端需要 ffprobe：`winget install Gyan.FFmpeg`（全容器方式不需要，镜像内已含）
+- **worker 需要 ffmpeg 与 ffprobe**（C5 视频合成本地执行）：同样来自 `winget install Gyan.FFmpeg`，
+  路径可用 `KIANO_FFMPEG_PATH` / `KIANO_FFPROBE_PATH` 覆盖
 - `.env`（不入库，键名见 `.env.example`）
 
 ## 全容器运行（推荐）
@@ -222,6 +224,30 @@ LLM 永不写这些文字。审核通过后渲染成 12 张图（4 hook × 1:1/4
   后台生成 ZIP（12 张图 + `manifest.csv`，UTF-8 BOM + RFC4180），完成后可下载；缺图的 SKU 列在 skipped。
 - **改价**：Woo 改价同步后 pricehook 只读价三张自动 STALE 重渲染；只有价格变化且基础要素一致时自动通过审核，
   并出现在“替换清单”里（旧文件 + 新文件一并列出，可复制文件名到广告平台替换）。
+
+## 短视频（C5）
+
+HERO 商品在事实锁定后可以生成 3 条 1080×1920 竖屏短视频（demo、problem、unboxing，15–30 秒）：
+
+1. 商品页 **Videos 面板 → 生成脚本**：LLM 按商品写 3 组脚本（hook ≤ 40 字，字幕每条 ≤ 42 字）进入审核看板，逐条通过。
+2. **生成视频**：选实拍时间窗、渲染字幕/结尾卡 PNG、选配乐，然后由 worker 的 FfmpegExecutor 合成。
+   前提：V1/V2/V3 已验收、审核通过的 PAGE_MAIN/PAGE_SCENE、政策 badge 完整、曲库里有启用曲目；
+   缺什么会在面板上逐条列出（409 `VIDEO_PRECONDITIONS`）。
+3. **审核**：审核看板选“视频”过滤，逐条播放（可在有配乐 / 无配乐之间切换）；展开“调整剪辑”可改每段实拍的入点/出点，
+   保存后按新剪辑重新合成新版本。AI 占比超过 30% 的剪辑无法保存，合成完成的超标视频直接记为 REJECTED。
+
+- **结构**：hook（3 秒）→ body（实拍演示）→ captions（卖点字幕，5 秒）→ 结尾卡（4 秒，价格/COD/MoMo/"Order on WhatsApp"）。
+  文字一律由模板渲染成 PNG 叠加；实拍段保留原声，结尾卡和 H3 段静音，配乐循环并在最后 1.5 秒淡出，响度归一化到 -14 LUFS。
+- **曲库**：**设置 → 曲库**（OWNER）上传，必须填写许可证类型/来源/证明；只接受 `CC0`、`ROYALTY_FREE_COMMERCIAL`、`OWNED`
+  （CC-BY 这类需要署名的许可不允许）。曲目只能停用，不能删除。上传上限 20 MB、10–300 秒（mp3/m4a/wav）。
+- **文件名**：`{SKU}_{type}_{real|mixed}_1080x1920_v{n}.mp4`；每条视频同时输出 `_nomusic` 无配乐版本供 TikTok 使用平台商用曲库。
+- **改价**：Woo 改价后视频变 STALE，只重渲染结尾卡；只有价格变化时自动通过，剪辑或脚本有变化则进入审核；替换清单会同时列出视频。
+- **导出**：Ads 页面导出时勾选“包含短视频”，ZIP 中每个 SKU 多 6 个文件（3 条 mp4 + 3 条 `_nomusic.mp4`），manifest 按文件补行。
+- **H3 开关与预算**（`kiano.content.video.h3.*`）：
+  - `backend`：`LOCAL_FIRST`（默认）/ `LOCAL_ONLY` / `API_ONLY` / `OFF`；本地要求注册并激活 `H3_I2V` 工作流（许可证白名单照常校验）。
+  - `api.enabled`：默认 `false`；接口先用 WireMock 回放验证（C5 计划附录 A 是拿到 API 文档和 key 后的真实对接）。
+  - `api.price-per-second-usd` 与 `api.daily-budget-usd`（默认 10 美元/天）：超出预算的片段改用实拍，AI 占比归零。
+  - `local.local-max-wait`（默认 2 小时）/ `api.max-wait`（默认 15 分钟）：本地和接口等待超时后升级到下一级或实拍，视频不会因为 H3 卡住。
 
 ## 文档
 
