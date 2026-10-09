@@ -5,10 +5,13 @@ import com.kiano.commerce.ProductCatalog;
 import com.kiano.commerce.ProductView;
 import com.kiano.content.ads.ManifestCsv.Row;
 import com.kiano.content.asset.AssetEntity;
+import com.kiano.content.asset.AssetFileName;
 import com.kiano.content.asset.AssetMapper;
 import com.kiano.content.asset.AssetStatus;
 import com.kiano.content.publish.PublicationEntity;
 import com.kiano.content.publish.PublicationMapper;
+import com.kiano.content.video.VideoScriptText;
+import com.kiano.content.video.VideoType;
 import com.kiano.platform.audit.ActorType;
 import com.kiano.platform.audit.AuditEntry;
 import com.kiano.platform.audit.AuditLog;
@@ -23,9 +26,11 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import org.jspecify.annotations.Nullable;
@@ -39,8 +44,12 @@ import tools.jackson.databind.ObjectMapper;
  * Queue handler for AD_EXPORT (spec §10.2): for every requested product the
  * twelve latest APPROVED AD_STATIC variants are zipped under their file names
  * together with a manifest.csv; a SKU missing any variant is listed in
- * {@code skipped} with the missing variants. When no SKU qualifies the
- * publication fails with NOTHING_TO_EXPORT. The ZIP goes to
+ * {@code skipped} with the missing variants. When the payload asks for the
+ * VIDEO part (C5 Task 11) the three latest APPROVED videos are added - the
+ * music and the no-music rendition, which TikTok uses with its own commercial
+ * library - and a SKU missing any video is skipped with
+ * VIDEOS_NOT_ALL_APPROVED. When no SKU qualifies the publication fails with
+ * NOTHING_TO_EXPORT. The ZIP goes to
  * {@code t{tenant}/exports/ads/{publicationId}.zip} and the publication is
  * marked APPLIED with the exported asset ids and the zip key.
  */
@@ -85,6 +94,11 @@ public class AdExportTaskHandler implements TaskHandler {
         long tenantId = publication.getTenantId();
         List<Long> productIds = new ArrayList<>();
         ctx.payload().path("productIds").forEach(node -> productIds.add(node.asLong()));
+        Set<String> parts = new LinkedHashSet<>();
+        ctx.payload().path("parts").forEach(node -> parts.add(node.asString()));
+        if (parts.isEmpty()) {
+            parts.add(AdExportService.ExportPart.STATIC.name());
+        }
 
         List<Row> manifest = new ArrayList<>();
         List<Long> exportedAssetIds = new ArrayList<>();
@@ -99,18 +113,38 @@ public class AdExportTaskHandler implements TaskHandler {
             }
             List<String> missing = new ArrayList<>();
             List<AssetEntity> statics = new ArrayList<>();
-            for (AdRenderService.AdVariant variant : renderService.allVariants()) {
-                Optional<AssetEntity> approved = latestApprovedStatic(tenantId, productId,
-                        variant.variant());
-                if (approved.isEmpty()) {
-                    missing.add(variant.variant());
-                } else {
-                    statics.add(approved.get());
+            if (parts.contains(AdExportService.ExportPart.STATIC.name())) {
+                for (AdRenderService.AdVariant variant : renderService.allVariants()) {
+                    Optional<AssetEntity> approved = latestApproved(tenantId, productId,
+                            "AD_STATIC", variant.variant());
+                    if (approved.isEmpty()) {
+                        missing.add(variant.variant());
+                    } else {
+                        statics.add(approved.get());
+                    }
+                }
+            }
+            List<String> missingVideos = new ArrayList<>();
+            List<AssetEntity> videos = new ArrayList<>();
+            if (parts.contains(AdExportService.ExportPart.VIDEO.name())) {
+                for (VideoType type : VideoType.values()) {
+                    Optional<AssetEntity> approved = latestApproved(tenantId, productId,
+                            "VIDEO_AD", type.wire());
+                    if (approved.isEmpty()) {
+                        missingVideos.add(type.wire());
+                    } else {
+                        videos.add(approved.get());
+                    }
                 }
             }
             if (!missing.isEmpty()) {
                 skippedBySku.put(product.sku(),
                         Map.of("reason", "NOT_ALL_APPROVED", "missing", missing));
+                continue;
+            }
+            if (!missingVideos.isEmpty()) {
+                skippedBySku.put(product.sku(),
+                        Map.of("reason", "VIDEOS_NOT_ALL_APPROVED", "missing", missingVideos));
                 continue;
             }
             for (int i = 0; i < statics.size(); i++) {
@@ -124,13 +158,30 @@ public class AdExportTaskHandler implements TaskHandler {
                 exportedAssetIds.add(asset.getId());
                 blobs.add(storage.download(asset.getObjectKey()));
             }
+            for (AssetEntity video : videos) {
+                VideoScriptText script = videoScript(video);
+                String size = video.getWidth() + "x" + video.getHeight();
+                String hook = video.getVariant();
+                String headline = script == null ? null : script.hook();
+                String primaryText = script == null || script.captions() == null ? null
+                        : String.join(" · ", script.captions());
+                String noMusicFile = AssetFileName.rendition(video.getFileName(), "nomusic");
+                for (String fileName : List.of(video.getFileName(), noMusicFile)) {
+                    manifest.add(new Row(fileName, product.sku(), hook, size, headline,
+                            primaryText, video.getPriceSnapshot(), video.getId()));
+                }
+                exportedAssetIds.add(video.getId());
+                blobs.add(storage.download(video.getObjectKey()));
+                blobs.add(storage.download(noMusicKey(video)));
+            }
         }
         if (manifest.isEmpty()) {
             publication.setStatus("FAILED");
-            publication.setError("NOTHING_TO_EXPORT: no SKU has the twelve approved variants");
+            publication.setError(
+                    "NOTHING_TO_EXPORT: no SKU has all of the requested approved assets");
             publicationMapper.updateById(publication);
             throw new NonRetryableTaskException(
-                    "NOTHING_TO_EXPORT: no SKU has the twelve approved variants");
+                    "NOTHING_TO_EXPORT: no SKU has all of the requested approved assets");
         }
 
         byte[] zip = zip(manifest, blobs);
@@ -141,6 +192,7 @@ public class AdExportTaskHandler implements TaskHandler {
         after.put("zipKey", zipKey);
         after.put("skipped", skippedBySku);
         after.put("fileCount", manifest.size());
+        after.put("parts", parts);
         publication.setAssetIds(objectMapper.writeValueAsString(exportedAssetIds));
         publication.setAfterJson(objectMapper.writeValueAsString(after));
         publication.setStatus("APPLIED");
@@ -149,7 +201,7 @@ public class AdExportTaskHandler implements TaskHandler {
 
         auditLog.record(new AuditEntry(tenantId, ActorType.SYSTEM, "SYSTEM", "ADS_EXPORTED",
                 "publication", String.valueOf(publicationId), null, after, null, "ADS"));
-        log.info("Exported {} ad statics for publication {}", manifest.size(), publicationId);
+        log.info("Exported {} ad files for publication {}", manifest.size(), publicationId);
         return Map.of("publicationId", publicationId, "fileCount", manifest.size(),
                 "skipped", skippedBySku);
     }
@@ -189,16 +241,37 @@ public class AdExportTaskHandler implements TaskHandler {
         }
     }
 
-    private Optional<AssetEntity> latestApprovedStatic(long tenantId, long productId,
+    private Optional<AssetEntity> latestApproved(long tenantId, long productId, String specCode,
             String variant) {
         List<AssetEntity> rows = assetMapper.selectList(Wrappers.<AssetEntity>lambdaQuery()
                 .eq(AssetEntity::getTenantId, tenantId)
                 .eq(AssetEntity::getProductId, productId)
-                .eq(AssetEntity::getSpecCode, "AD_STATIC")
+                .eq(AssetEntity::getSpecCode, specCode)
                 .eq(AssetEntity::getVariant, variant)
                 .eq(AssetEntity::getStatus, AssetStatus.APPROVED.name())
                 .orderByDesc(AssetEntity::getVersion)
                 .last("limit 1"));
         return rows.isEmpty() ? Optional.empty() : Optional.of(rows.get(0));
+    }
+
+    /** The script the video was cut from; null when unreadable. */
+    private @Nullable VideoScriptText videoScript(AssetEntity video) {
+        try {
+            JsonNode provenance = objectMapper.readTree(video.getProvenanceJson());
+            long scriptId = provenance.path("scriptAssetId").asLong(0);
+            AssetEntity script = scriptId == 0 ? null : assetMapper.selectById(scriptId);
+            if (script == null || script.getTextBody() == null) {
+                return null;
+            }
+            return VideoScriptText.fromJson(script.getTextBody());
+        } catch (RuntimeException ex) {
+            log.warn("Cannot read the script of video asset {}", video.getId(), ex);
+            return null;
+        }
+    }
+
+    /** The no-music rendition stored with the video (C5). */
+    private String noMusicKey(AssetEntity video) {
+        return objectMapper.readTree(video.getRenditionsJson()).path("nomusic").asString();
     }
 }

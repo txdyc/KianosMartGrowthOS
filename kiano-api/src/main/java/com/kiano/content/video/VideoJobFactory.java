@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Component;
 
 /**
@@ -91,14 +92,29 @@ public class VideoJobFactory {
     /** The final FFMPEG compose job: EDL, object keys and the composed provenance. */
     public long createCompose(long tenantId, long productId, long runId, VideoTypeContext context,
             Edl edl, Map<String, String> inputs, Map<String, Object> provenance) {
+        return createCompose(tenantId, productId, runId, context.type(), context.composeKey(), edl,
+                inputs, context.outputs(), provenance, null);
+    }
+
+    /**
+     * A compose job from raw parts - used by the price re-render, which starts
+     * from the old cut instead of a type context and marks the STALE version it
+     * replaces so the new one can auto-approve.
+     */
+    public long createCompose(long tenantId, long productId, long runId, String type,
+            String composeKey, Edl edl, Map<String, String> inputs, Map<String, String> outputs,
+            Map<String, Object> provenance, @Nullable Long autoApproveFrom) {
         Map<String, Object> input = new LinkedHashMap<>();
-        input.put("composeKey", context.composeKey());
+        input.put("composeKey", composeKey);
         input.put("edl", edl);
         input.put("inputs", referencedInputs(edl, inputs));
-        input.put("outputs", context.outputs());
+        input.put("outputs", outputs);
         input.put("provenance", provenance);
-        return jobs.create(tenantId, productId, runId, JobStep.VIDEO_COMPOSE, context.type(),
-                input, List.of());
+        if (autoApproveFrom != null) {
+            input.put("autoApproveFrom", autoApproveFrom);
+        }
+        return jobs.create(tenantId, productId, runId, JobStep.VIDEO_COMPOSE, type, input,
+                List.of());
     }
 
     /** The compose job already created for this context, if any. */

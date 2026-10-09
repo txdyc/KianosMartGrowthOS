@@ -7,9 +7,12 @@ import com.kiano.content.profile.ProductProfileService;
 import com.kiano.platform.auth.CurrentUser;
 import com.kiano.platform.queue.TaskQueue;
 import com.kiano.platform.web.ApiException;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -45,8 +48,11 @@ public class AdController {
             @Nullable String lastError, java.time.@Nullable Instant finishedAt) {
     }
 
-    /** Export request body: productIds optional (null/empty = all HERO products). */
-    public record ExportRequest(@Nullable List<Long> productIds) {
+    /**
+     * Export request body: productIds optional (null/empty = all HERO products),
+     * parts optional (null/empty = STATIC only; VIDEO adds the short videos).
+     */
+    public record ExportRequest(@Nullable List<Long> productIds, @Nullable List<String> parts) {
     }
 
     private final AdRenderService renderService;
@@ -155,9 +161,27 @@ public class AdController {
     public ResponseEntity<Map<String, Object>> requestExport(CurrentUser user,
             @RequestBody(required = false) ExportRequest request) {
         long publicationId = exportService.request(user,
-                request == null ? null : request.productIds());
+                request == null ? null : request.productIds(),
+                request == null ? null : parts(request.parts()));
         return ResponseEntity.status(HttpStatus.ACCEPTED)
                 .body(Map.of("publicationId", publicationId));
+    }
+
+    /** Parses the requested export parts; null when omitted (STATIC only). */
+    private static @Nullable Set<AdExportService.ExportPart> parts(@Nullable List<String> names) {
+        if (names == null || names.isEmpty()) {
+            return null;
+        }
+        Set<AdExportService.ExportPart> parts = EnumSet.noneOf(AdExportService.ExportPart.class);
+        for (String name : names) {
+            try {
+                parts.add(AdExportService.ExportPart.valueOf(name.trim().toUpperCase(Locale.ROOT)));
+            } catch (IllegalArgumentException ex) {
+                throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "VALIDATION_FAILED",
+                        "Unknown export part " + name);
+            }
+        }
+        return parts;
     }
 
     @GetMapping("/ads/exports")

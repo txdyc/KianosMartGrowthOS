@@ -47,6 +47,20 @@ public class VideoOverlayRenderer {
             List<PrecheckFlag> flags, Map<String, Object> templateVersions) {
     }
 
+    /** A re-rendered end card with the current price (C5 T11 price change). */
+    public record EndCard(byte[] png, PriceDisplay price, int templateVersion) {
+    }
+
+    /**
+     * Only the end card, with the current price and the latest END_CARD
+     * template (the price re-render keeps every other overlay PNG).
+     */
+    public EndCard renderEndCard(long tenantId, ProductView product) {
+        PriceDisplay price = PriceDisplay.of(product, Instant.now());
+        return new EndCard(renderEndCard(tenantId, product, price), price,
+                version(tenantId, "END_CARD"));
+    }
+
     private final TemplateRenderer templates;
     private final TemplateRegistry registry;
     private final PolicyService policyService;

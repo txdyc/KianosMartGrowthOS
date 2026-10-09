@@ -172,6 +172,15 @@ public class AssetService {
         String fileName = AssetFileName.format(sku, variant, mixed ? "mixed" : "real",
                 (int) edl.width(), (int) edl.height(), version, "mp4");
 
+        // a price-only re-render auto-approves: same cut, script, music, H3 and
+        // template versions as the STALE version it replaces (C5 Task 11)
+        Map<String, Object> stored = new LinkedHashMap<>(provenance == null ? Map.of() : provenance);
+        stored.put("edl", edl);
+        Long baselineId = job.input().path("autoApproveFrom").isNumber()
+                ? job.input().path("autoApproveFrom").asLong() : null;
+        boolean autoApproved = !blocked && baselineId != null
+                && matchesBaseline(baselineId, stored);
+
         AssetEntity entity = new AssetEntity();
         entity.setTenantId(job.tenantId());
         entity.setProductId(job.productId());
@@ -191,13 +200,12 @@ public class AssetService {
         entity.setPriceSnapshot(priceSnapshot(provenance));
         entity.setRenditionsJson(objectMapper.writeValueAsString(Map.of(
                 "nomusic", noMusicAssetKey, "poster", posterAssetKey)));
-        entity.setStatus((blocked ? AssetStatus.REJECTED : AssetStatus.IN_REVIEW).name());
+        entity.setStatus((blocked ? AssetStatus.REJECTED
+                : autoApproved ? AssetStatus.APPROVED : AssetStatus.IN_REVIEW).name());
         entity.setPrecheckJson(objectMapper.writeValueAsString(Map.of(
                 "flags", flags.stream().map(Enum::name).toList(), "metrics", Map.of())));
         // the cut travels with the asset: the review editor trims it and the
         // price re-render compares it (C5 T10/T11)
-        Map<String, Object> stored = new LinkedHashMap<>(provenance == null ? Map.of() : provenance);
-        stored.put("edl", edl);
         entity.setProvenanceJson(objectMapper.writeValueAsString(stored));
         entity.setFileName(fileName);
         entity.setRunId(job.runId());
@@ -228,10 +236,74 @@ public class AssetService {
                     Map.of("aiRatio", aiRatio, "maxAiRatio", videoProperties.getMaxAiRatio()),
                     "AI_RATIO_EXCEEDED", "VIDEO"));
         }
+        if (autoApproved) {
+            auditLog.record(new AuditEntry(job.tenantId(), ActorType.SYSTEM, "SYSTEM",
+                    "VIDEO_AUTO_APPROVED_PRICE_CHANGE", "asset", String.valueOf(entity.getId()),
+                    Map.of("status", AssetStatus.STALE.name(),
+                            "autoApproveFrom", String.valueOf(baselineId)),
+                    Map.of("status", AssetStatus.APPROVED.name()), null, "VIDEO"));
+        }
 
         return new AssetView(entity.getId(), job.productId(), "VIDEO_AD", variant, version,
                 entity.getStatus(), flags, Map.of(), fileName, sourceMediaId(provenance),
                 entity.getCreatedAt().toInstant());
+    }
+
+    /**
+     * True when the STALE version this re-render replaces differs only in the
+     * price: same script, EDL, music, H3 outcome and template versions (C5 T11).
+     * Nothing else may have changed since the baseline was rendered either - a
+     * newer version (an edited cut) or a new approved script means the reused
+     * overlays are stale, so those re-renders go to review (Review Focus 5).
+     */
+    private boolean matchesBaseline(long baselineId, Map<String, Object> now) {
+        AssetEntity baseline = mapper.selectById(baselineId);
+        if (baseline == null || !AssetStatus.STALE.name().equals(baseline.getStatus())
+                || newerVersionExists(baseline) || !scriptUnchanged(baseline, now)) {
+            return false;
+        }
+        JsonNode old = objectMapper.readTree(baseline.getProvenanceJson());
+        // through the serialized form on both sides: a JsonNode built in memory
+        // holds LongNode where the jsonb round trip reads IntNode, and the two
+        // are never equal even for the same number
+        JsonNode current = objectMapper.readTree(objectMapper.writeValueAsString(now));
+        return old.path("edl").equals(current.path("edl"))
+                && old.path("scriptAssetId").asLong() == current.path("scriptAssetId").asLong()
+                && old.path("musicTrackId").asLong() == current.path("musicTrackId").asLong()
+                && old.path("templates").equals(current.path("templates"))
+                && old.path("h3").equals(current.path("h3"));
+    }
+
+    /**
+     * A version newer than the baseline - a manual EDL edit waiting in review
+     * (IN_REVIEW versions are archived by the price listener) - blocks the
+     * auto-approval. REJECTED attempts are ignored, like in C4a.
+     */
+    private boolean newerVersionExists(AssetEntity baseline) {
+        return mapper.selectOne(new LambdaQueryWrapper<AssetEntity>()
+                .eq(AssetEntity::getTenantId, baseline.getTenantId())
+                .eq(AssetEntity::getProductId, baseline.getProductId())
+                .eq(AssetEntity::getSpecCode, "VIDEO_AD")
+                .eq(AssetEntity::getVariant, baseline.getVariant())
+                .gt(AssetEntity::getVersion, baseline.getVersion())
+                .ne(AssetEntity::getStatus, AssetStatus.REJECTED.name())
+                .last("limit 1")) != null;
+    }
+
+    /** The approved script the baseline was rendered from must still be the current one. */
+    private boolean scriptUnchanged(AssetEntity baseline, Map<String, Object> now) {
+        if (!(now.get("scriptAssetId") instanceof Number scriptId)) {
+            return false;
+        }
+        AssetEntity approved = mapper.selectOne(new LambdaQueryWrapper<AssetEntity>()
+                .eq(AssetEntity::getTenantId, baseline.getTenantId())
+                .eq(AssetEntity::getProductId, baseline.getProductId())
+                .eq(AssetEntity::getSpecCode, "VIDEO_SCRIPT")
+                .eq(AssetEntity::getVariant, baseline.getVariant())
+                .eq(AssetEntity::getStatus, AssetStatus.APPROVED.name())
+                .orderByDesc(AssetEntity::getVersion)
+                .last("limit 1"));
+        return approved != null && approved.getId().longValue() == scriptId.longValue();
     }
 
     private static @Nullable BigDecimal priceSnapshot(Map<String, Object> provenance) {

@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.kiano.TestcontainersConfiguration;
 import com.kiano.content.publish.PublicationEntity;
 import com.kiano.content.publish.PublicationMapper;
+import com.kiano.content.video.VideoType;
 import com.kiano.imaging.ImageCodec;
 import com.kiano.platform.auth.CurrentUser;
 import com.kiano.platform.auth.Role;
@@ -21,7 +22,9 @@ import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.zip.ZipInputStream;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -200,6 +203,62 @@ class AdExportServiceTest {
     }
 
     @Test
+    void export_withVideos_requiresAllThree_zipHasNoMusicRendition_manifestRows() throws Exception {
+        long productId = product("MG-KTL17", true);
+        seedFullStatics(productId, "MG-KTL17");
+        seedVideos(productId, "MG-KTL17", null);
+        // the second SKU has its statics but only two of the three videos
+        long partial = product("MG-FAN18", true);
+        seedFullStatics(partial, "MG-FAN18");
+        seedVideos(partial, "MG-FAN18", VideoType.UNBOXING);
+
+        long publicationId = service.request(user, List.of(productId, partial),
+                Set.of(AdExportService.ExportPart.STATIC, AdExportService.ExportPart.VIDEO));
+        runHandler(publicationId);
+        PublicationEntity publication = publicationMapper.selectById(publicationId);
+
+        assertThat(publication.getStatus()).isEqualTo("APPLIED");
+        JsonNode after = mapper.readTree(publication.getAfterJson());
+        assertThat(after.path("skipped").path("MG-FAN18").path("reason").asText())
+                .isEqualTo("VIDEOS_NOT_ALL_APPROVED");
+        assertThat(after.path("skipped").path("MG-FAN18").path("missing").toString())
+                .contains("unboxing");
+        assertThat(mapper.readTree(publication.getAssetIds()).size()).isEqualTo(15);
+        assertThat(after.path("fileCount").asInt()).isEqualTo(18); // 12 statics + 3×2 videos
+
+        Map<String, byte[]> entries = readZip(storage.download(after.path("zipKey").asText()));
+        String video = "MG-KTL17_demo_real_1080x1920_v1.mp4";
+        assertThat(entries).containsKeys(video,
+                "MG-KTL17_demo_real_1080x1920_v1_nomusic.mp4", "manifest.csv");
+        assertThat(entries.keySet().stream()
+                .filter(name -> name.startsWith("MG-FAN18"))).isEmpty();
+        String manifest = new String(entries.get("manifest.csv"),
+                java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(manifest).contains(video + ",MG-KTL17,demo,1080x1920,Meet the kettle,"
+                + "1.7 litre · Auto shut-off · Boils fast,249.00,");
+        assertThat(manifest).contains("MG-KTL17_demo_real_1080x1920_v1_nomusic.mp4");
+    }
+
+    @Test
+    void export_defaultStaticOnly_unchanged() throws Exception {
+        long productId = product("MG-KTL17", true);
+        seedFullStatics(productId, "MG-KTL17");
+        // approved videos exist but the default request does not ask for them
+        seedVideos(productId, "MG-KTL17", null);
+
+        long publicationId = service.request(user, List.of(productId));
+        runHandler(publicationId);
+        PublicationEntity publication = publicationMapper.selectById(publicationId);
+
+        assertThat(enqueuedPayload().path("parts").toString()).contains("STATIC");
+        JsonNode after = mapper.readTree(publication.getAfterJson());
+        assertThat(after.path("fileCount").asInt()).isEqualTo(12);
+        assertThat(mapper.readTree(publication.getAssetIds()).size()).isEqualTo(12);
+        Map<String, byte[]> entries = readZip(storage.download(after.path("zipKey").asText()));
+        assertThat(entries.keySet()).noneMatch(name -> name.endsWith(".mp4"));
+    }
+
+    @Test
     void downloadUri_andList_afterApply() {
         long productId = product("MG-KTL17", true);
         seedFullStatics(productId, "MG-KTL17");
@@ -279,6 +338,48 @@ class AdExportServiceTest {
                     variant.size().width(), variant.size().height(), provenance,
                     price, price ? BigDecimal.valueOf(249) : null, fileName);
         }
+    }
+
+    /** Three approved videos with their scripts, renditions and the no-music file. */
+    private void seedVideos(long productId, String sku, @Nullable VideoType skip) {
+        for (VideoType type : VideoType.values()) {
+            if (type == skip) {
+                continue;
+            }
+            long scriptId = videoScript(productId, type);
+            String dir = "t" + tenantId + "/assets/" + productId + "/VIDEO_AD/" + type.wire();
+            storage.put(dir + "/v1.mp4", videoBytes(), "video/mp4");
+            storage.put(dir + "/v1_nomusic.mp4", videoBytes(), "video/mp4");
+            String fileName = sku + "_" + type.wire() + "_real_1080x1920_v1.mp4";
+            jdbcTemplate.update(
+                    "insert into asset (tenant_id, product_id, spec_code, variant, version, kind, "
+                            + "object_key, width, height, status, precheck_json, provenance_json, "
+                            + "depends_on_price, price_snapshot, file_name, renditions_json) "
+                            + "values (?, ?, 'VIDEO_AD', ?, 1, 'VIDEO', ?, 1080, 1920, 'APPROVED', "
+                            + "'{}'::jsonb, ?::jsonb, true, ?, ?, ?::jsonb)",
+                    tenantId, productId, type.wire(), dir + "/v1.mp4",
+                    "{\"scriptAssetId\":" + scriptId + "}", BigDecimal.valueOf(249), fileName,
+                    "{\"nomusic\":\"" + dir + "/v1_nomusic.mp4\",\"poster\":\""
+                            + dir + "/v1_poster.jpg\"}");
+        }
+    }
+
+    private long videoScript(long productId, VideoType type) {
+        String body = "{\"hook\":\"Meet the kettle\",\"captions\":[\"1.7 litre\","
+                + "\"Auto shut-off\",\"Boils fast\"]}";
+        return jdbcTemplate.queryForObject(
+                "insert into asset (tenant_id, product_id, spec_code, variant, version, kind, "
+                        + "text_body, status, precheck_json, provenance_json) "
+                        + "values (?, ?, 'VIDEO_SCRIPT', ?, 1, 'TEXT', ?, 'APPROVED', "
+                        + "'{}'::jsonb, '{}'::jsonb) returning id",
+                Long.class, tenantId, productId, type.wire(), body);
+    }
+
+    private static byte[] videoBytes() {
+        byte[] bytes = new byte[16];
+        byte[] header = {'f', 't', 'y', 'p', 'i', 's', 'o', 'm'};
+        System.arraycopy(header, 0, bytes, 4, header.length);
+        return bytes;
     }
 
     private long adCopy(long productId, AdHook hook) {

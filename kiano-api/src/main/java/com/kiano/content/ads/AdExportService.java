@@ -16,9 +16,11 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -30,10 +32,19 @@ import tools.jackson.databind.ObjectMapper;
  * product. A PENDING publication (target AD_EXPORT, environment PRODUCTION,
  * asset_ids []) is recorded as the export handle and an AD_EXPORT task is
  * enqueued with the resolved product ids; the task then fills the actual
- * asset ids, the ZIP location and the APPLIED/failed status.
+ * asset ids, the ZIP location and the APPLIED/failed status. C5 Task 11 lets
+ * the request also ask for the short videos ({@link ExportPart#VIDEO}).
  */
 @Service
 public class AdExportService {
+
+    /**
+     * The parts of an export. Every requested part must be complete for a SKU
+     * or the whole SKU is listed in {@code skipped}.
+     */
+    public enum ExportPart {
+        STATIC, VIDEO
+    }
 
     private final PublicationMapper publicationMapper;
     private final ProductCatalog productCatalog;
@@ -53,8 +64,19 @@ public class AdExportService {
         this.objectMapper = objectMapper;
     }
 
-    /** Requests an ad export; empty {@code productIds} exports every HERO product. */
+    /** Requests a static-only ad export (C4a); empty {@code productIds} exports every HERO product. */
     public long request(CurrentUser user, @Nullable List<Long> productIds) {
+        return request(user, productIds, null);
+    }
+
+    /**
+     * Requests an ad export of the given parts; null or empty means
+     * {@code {STATIC}}, which keeps the C4a behavior.
+     */
+    public long request(CurrentUser user, @Nullable List<Long> productIds,
+            @Nullable Set<ExportPart> parts) {
+        Set<ExportPart> resolvedParts = parts == null || parts.isEmpty()
+                ? EnumSet.of(ExportPart.STATIC) : EnumSet.copyOf(parts);
         List<Long> resolved = resolve(user.tenantId(), productIds);
         if (resolved.isEmpty()) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "NOTHING_TO_EXPORT",
@@ -74,11 +96,14 @@ public class AdExportService {
         entity.setCreatedAt(OffsetDateTime.now(ZoneOffset.UTC));
         publicationMapper.insert(entity);
 
+        List<String> partNames = resolvedParts.stream().map(Enum::name).sorted().toList();
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("publicationId", entity.getId());
         payload.put("productIds", resolved);
+        payload.put("parts", partNames);
         queue.enqueue(user.tenantId(), AdExportTaskHandler.TYPE, payload,
-                "ad-export:" + String.join(",", resolved.stream().map(String::valueOf).toList()));
+                "ad-export:" + String.join(",", partNames) + ":"
+                        + String.join(",", resolved.stream().map(String::valueOf).toList()));
         return entity.getId();
     }
 

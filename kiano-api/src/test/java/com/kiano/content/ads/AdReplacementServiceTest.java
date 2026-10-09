@@ -115,6 +115,28 @@ class AdReplacementServiceTest {
     }
 
     @Test
+    void replacements_includeExportedThenStaleVideos() {
+        long oldStatic = staticAsset("pricehook-1080x1080", 1, "STALE", "MG-KTL17_old.jpg");
+        long newStatic = staticAsset("pricehook-1080x1080", 2, "APPROVED", "MG-KTL17_new.jpg");
+        long oldVideo = videoAsset("demo", 1, "STALE", "MG-KTL17_demo_real_1080x1920_v1.mp4");
+        long newVideo = videoAsset("demo", 2, "APPROVED", "MG-KTL17_demo_real_1080x1920_v2.mp4");
+        exportedPublication(List.of(oldStatic, oldVideo), "APPLIED");
+
+        List<Replacement> replacements = service.list(tenantId);
+
+        assertThat(replacements).extracting(Replacement::specCode)
+                .containsExactly("AD_STATIC", "VIDEO_AD");
+        assertThat(replacements.get(0).oldAssetId()).isEqualTo(oldStatic);
+        assertThat(replacements.get(0).newAssetId()).isEqualTo(newStatic);
+        assertThat(replacements.get(1).oldAssetId()).isEqualTo(oldVideo);
+        assertThat(replacements.get(1).newAssetId()).isEqualTo(newVideo);
+        assertThat(replacements.get(1).variant()).isEqualTo("demo");
+        assertThat(replacements.get(1).oldFileName()).isEqualTo("MG-KTL17_demo_real_1080x1920_v1.mp4");
+        assertThat(replacements.get(1).newFileName()).isEqualTo("MG-KTL17_demo_real_1080x1920_v2.mp4");
+        assertThat(replacements.get(1).newStatus()).isEqualTo("APPROVED");
+    }
+
+    @Test
     void pendingExport_ignored() {
         long oldId = staticAsset("pricehook-1080x1080", 1, "STALE", "MG-KTL17_old.jpg");
         exportedPublication(List.of(oldId), "PENDING");
@@ -134,6 +156,18 @@ class AdReplacementServiceTest {
                 Long.class, tenantId, productId, variant, version, status,
                 "{\"template\":{\"code\":\"AD_PRICEHOOK\",\"version\":1}}",
                 BigDecimal.valueOf(299), fileName);
+    }
+
+    /** A VIDEO_AD version; only the columns the replacement list needs. */
+    private long videoAsset(String variant, int version, String status, String fileName) {
+        return jdbcTemplate.queryForObject(
+                "insert into asset (tenant_id, product_id, spec_code, variant, version, kind, "
+                        + "status, precheck_json, provenance_json, depends_on_price, "
+                        + "price_snapshot, file_name) "
+                        + "values (?, ?, 'VIDEO_AD', ?, ?, 'VIDEO', ?, '{}'::jsonb, '{}'::jsonb, "
+                        + "true, ?, ?) returning id",
+                Long.class, tenantId, productId, variant, version, status,
+                BigDecimal.valueOf(249), fileName);
     }
 
     private void exportedPublication(List<Long> assetIds, String status) {

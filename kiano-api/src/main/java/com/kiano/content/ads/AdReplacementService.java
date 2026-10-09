@@ -16,12 +16,13 @@ import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * The "assets to swap in the ad platform" list: old versions are statics that
- * were shipped in an APPLIED ad export and have since gone STALE (the price
- * changed); the replacement is the same variant's latest APPROVED version. A
- * row only appears once that replacement is APPROVED (until then it is still
- * pending review) and disappears once the replacement itself has been shipped
- * in an APPLIED export (the swap is done).
+ * The "assets to swap in the ad platform" list: old versions are statics or
+ * short videos (C5 Task 11) that were shipped in an APPLIED ad export and have
+ * since gone STALE (the price changed); the replacement is the same spec code
+ * and variant's latest APPROVED version. A row only appears once that
+ * replacement is APPROVED (until then it is still pending review) and
+ * disappears once the replacement itself has been shipped in an APPLIED export
+ * (the swap is done).
  */
 @Service
 public class AdReplacementService {
@@ -29,7 +30,7 @@ public class AdReplacementService {
     /** One swap: the exported file and its approved replacement. */
     public record Replacement(long productId, @Nullable String sku, String variant,
             String oldFileName, long oldAssetId,
-            String newFileName, long newAssetId, String newStatus) {
+            String newFileName, long newAssetId, String newStatus, String specCode) {
     }
 
     private final PublicationMapper publicationMapper;
@@ -60,8 +61,8 @@ public class AdReplacementService {
             if (old == null || !AssetStatus.STALE.name().equals(old.getStatus())) {
                 continue;
             }
-            AssetEntity replacement = latestApprovedStatic(old.getTenantId(),
-                    old.getProductId(), old.getVariant()).orElse(null);
+            AssetEntity replacement = latestApproved(old.getTenantId(),
+                    old.getProductId(), old.getSpecCode(), old.getVariant()).orElse(null);
             // nothing to swap in until the new version is approved, and nothing
             // left to do once that version has itself been exported
             if (replacement == null || exported.containsKey(replacement.getId())) {
@@ -72,7 +73,7 @@ public class AdReplacementService {
                             .map(p -> p.sku()).orElse(null));
             replacements.add(new Replacement(old.getProductId(), sku, old.getVariant(),
                     old.getFileName(), old.getId(), replacement.getFileName(),
-                    replacement.getId(), replacement.getStatus()));
+                    replacement.getId(), replacement.getStatus(), old.getSpecCode()));
         }
         return replacements;
     }
@@ -85,12 +86,12 @@ public class AdReplacementService {
                 .orderByAsc(PublicationEntity::getId));
     }
 
-    private java.util.Optional<AssetEntity> latestApprovedStatic(long tenantId, long productId,
-            String variant) {
+    private java.util.Optional<AssetEntity> latestApproved(long tenantId, long productId,
+            String specCode, String variant) {
         List<AssetEntity> rows = assetMapper.selectList(Wrappers.<AssetEntity>lambdaQuery()
                 .eq(AssetEntity::getTenantId, tenantId)
                 .eq(AssetEntity::getProductId, productId)
-                .eq(AssetEntity::getSpecCode, "AD_STATIC")
+                .eq(AssetEntity::getSpecCode, specCode)
                 .eq(AssetEntity::getVariant, variant)
                 .eq(AssetEntity::getStatus, AssetStatus.APPROVED.name())
                 .orderByDesc(AssetEntity::getVersion)
