@@ -52,12 +52,7 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public class PublicationService {
 
-    private static final Set<String> REQUIRED_SPECS = Set.of("PAGE_MAIN", "COPY_TITLE",
-            "COPY_SHORT", "COPY_LONG");
-    private static final int MIN_ANGLES = 3;
     private static final String OPTIONAL_SEO = "COPY_SEO";
-    private static final Set<String> LIVE_STATUSES = Set.of(AssetStatus.APPROVED.name(),
-            AssetStatus.PUBLISHED.name());
 
     private final PublicationMapper mapper;
     private final com.kiano.content.asset.AssetMapper assetMapper;
@@ -95,17 +90,39 @@ public class PublicationService {
     @Transactional
     public long request(CurrentUser user, long productId, PublishEnvironment environment) {
         requireRole(user, environment);
-        productCatalog.findById(user.tenantId(), productId)
+        return enqueue(user.tenantId(), productId, environment, user.userId(), ActorType.USER,
+                String.valueOf(user.userId()), "PUBLISH", 0, null, null);
+    }
+
+    /**
+     * SYSTEM staging publish for a batch (C6 Task 3): the same preconditions as
+     * {@link #request}, but the publication has no publisher, the audit is
+     * SYSTEM/BATCH and the task carries the batch priority. {@code runAfter}
+     * spaces the publishes of one batch (the orchestrator passes the next slot).
+     */
+    @Transactional
+    public long requestSystem(long tenantId, long productId, long batchId,
+            @Nullable Instant runAfter) {
+        return enqueue(tenantId, productId, PublishEnvironment.STAGING, null, ActorType.SYSTEM,
+                "SYSTEM", "BATCH", 10, runAfter, Map.of("batchId", batchId));
+    }
+
+    /** Shared publish request: preconditions, row, task and audit. */
+    private long enqueue(long tenantId, long productId, PublishEnvironment environment,
+            @Nullable Long publishedBy, ActorType actor, String actorId, String source,
+            int priority, @Nullable Instant runAfter, @Nullable Map<String, Object> extraAfter) {
+        productCatalog.findById(tenantId, productId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND",
                         "Product not found"));
-        List<ReviewItem> approved = liveContent(reviewService.list(user, productId, null, null));
-        List<String> missing = missingRequired(approved);
+        List<ReviewItem> approved = PublishRules.liveContent(
+                reviewService.list(tenantId, productId));
+        List<String> missing = PublishRules.missingRequired(approved);
         if (!missing.isEmpty()) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "PUBLISH_PRECONDITIONS",
                     "Not all required assets are approved",
                     Map.of("missing", missing));
         }
-        int policyVersion = policyService.requireComplete(user.tenantId()).version();
+        int policyVersion = policyService.requireComplete(tenantId).version();
         ReviewItem longCopy = approved.stream()
                 .filter(item -> "COPY_LONG".equals(item.specCode())).findFirst().get();
         Integer longCopyPolicy = readContentPolicyVersion(longCopy);
@@ -116,10 +133,10 @@ public class PublicationService {
         }
         List<Long> assetIds = publishableAssetIds(approved);
         if (environment == PublishEnvironment.PRODUCTION) {
-            verifyStagingGate(user.tenantId(), productId, assetIds);
+            verifyStagingGate(tenantId, productId, assetIds);
         }
         PublicationEntity entity = new PublicationEntity();
-        entity.setTenantId(user.tenantId());
+        entity.setTenantId(tenantId);
         entity.setProductId(productId);
         entity.setEnvironment(environment.name());
         entity.setTarget("WOO_PRODUCT");
@@ -128,21 +145,24 @@ public class PublicationService {
         entity.setArchivedAssetIds("[]");
         entity.setStatus("PENDING");
         entity.setNeedsAttention(false);
-        entity.setPublishedBy(user.userId());
+        entity.setPublishedBy(publishedBy);
         entity.setCreatedAt(OffsetDateTime.now(ZoneOffset.UTC));
         mapper.insert(entity);
-        Optional<Long> taskId = queue.enqueue(user.tenantId(), PublishTaskHandler.TYPE,
+        Optional<Long> taskId = queue.enqueue(tenantId, PublishTaskHandler.TYPE,
                 Map.of("publicationId", entity.getId()),
-                "publish:" + productId + ":" + environment.name());
+                "publish:" + productId + ":" + environment.name(), priority, runAfter);
         if (taskId.isEmpty()) {
             throw new ApiException(HttpStatus.CONFLICT, "PUBLISH_IN_PROGRESS",
                     "A publish for this product and environment is already queued or running");
         }
-        auditLog.record(new AuditEntry(user.tenantId(), ActorType.USER,
-                String.valueOf(user.userId()), "PUBLISH_REQUESTED", "product",
-                String.valueOf(productId),
-                Map.of("environment", environment.name(), "assetIds", assetIds),
-                null, null, "PUBLISH"));
+        Map<String, Object> after = new LinkedHashMap<>();
+        after.put("environment", environment.name());
+        after.put("assetIds", assetIds);
+        if (extraAfter != null) {
+            after.putAll(extraAfter);
+        }
+        auditLog.record(new AuditEntry(tenantId, actor, actorId, "PUBLISH_REQUESTED", "product",
+                String.valueOf(productId), null, after, null, source));
         return entity.getId();
     }
 
@@ -305,24 +325,6 @@ public class PublicationService {
         return toView(user, publication);
     }
 
-    /**
-     * The content a publish writes: for every spec/variant, the newest version
-     * that is APPROVED or already PUBLISHED. Older approved versions (e.g. the
-     * pre-policy-change COPY_LONG) and newer versions still in review are
-     * ignored, and a republish keeps the live PUBLISHED assets it doesn't replace.
-     */
-    static List<ReviewItem> liveContent(List<ReviewItem> all) {
-        Map<String, ReviewItem> latest = new LinkedHashMap<>();
-        for (ReviewItem item : all) {
-            if (!LIVE_STATUSES.contains(item.status())) {
-                continue;
-            }
-            latest.merge(item.specCode() + "/" + item.variant(), item,
-                    (a, b) -> a.version() >= b.version() ? a : b);
-        }
-        return new ArrayList<>(latest.values());
-    }
-
     /** PRODUCTION rollback: published → approved; archived-during-publish → published. */
     private void revertAssetStatuses(PublicationEntity publication) {
         for (Long assetId : readIdList(publication.getAssetIds())) {
@@ -354,23 +356,6 @@ public class PublicationService {
             }
         }
         return ids;
-    }
-
-    private List<String> missingRequired(List<ReviewItem> approved) {
-        List<String> missing = new ArrayList<>();
-        for (String spec : REQUIRED_SPECS) {
-            boolean present = approved.stream()
-                    .anyMatch(item -> spec.equals(item.specCode()));
-            if (!present) {
-                missing.add(spec);
-            }
-        }
-        long angles = approved.stream()
-                .filter(item -> "PAGE_ANGLE".equals(item.specCode())).count();
-        if (angles < MIN_ANGLES) {
-            missing.add("PAGE_ANGLE x" + MIN_ANGLES + " (have " + angles + ")");
-        }
-        return missing;
     }
 
     private void verifyStagingGate(long tenantId, long productId, List<Long> assetIds) {

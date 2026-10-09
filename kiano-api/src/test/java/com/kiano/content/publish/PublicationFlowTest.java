@@ -221,6 +221,62 @@ class PublicationFlowTest {
                         ex -> assertThat(ex.getCode()).isEqualTo("PUBLISH_PRECONDITIONS"));
     }
 
+    // ---- C6 Task 3: SYSTEM staging publish for a batch ----
+
+    @Test
+    void requestSystem_stagesAsSystem_withBatchAuditPriorityAndRunAfter() {
+        Instant runAfter = Instant.parse("2026-10-10T22:00:10Z");
+
+        long id = service.requestSystem(tenantId, productId, 42L, runAfter);
+
+        Map<String, Object> pub = jdbc.queryForMap("select environment, status, published_by "
+                + "from publication where id = ?", id);
+        assertThat(pub.get("environment")).isEqualTo("STAGING");
+        assertThat(pub.get("status")).isEqualTo("PENDING");
+        assertThat(pub.get("published_by")).isNull();
+
+        Map<String, Object> task = jdbc.queryForMap("select priority, run_after, payload::text "
+                + "from platform_task where type = 'PUBLISH_PRODUCT' and dedupe_key = ?",
+                "publish:" + productId + ":STAGING");
+        assertThat(((Number) task.get("priority")).intValue()).isEqualTo(10);
+        assertThat(((java.sql.Timestamp) task.get("run_after")).toInstant()).isEqualTo(runAfter);
+        assertThat((String) task.get("payload")).contains("\"publicationId\": " + id);
+
+        Map<String, Object> audit = jdbc.queryForMap("select actor_type, actor_id, source, "
+                + "after_json::text from audit_log where action = 'PUBLISH_REQUESTED' "
+                + "order by id desc limit 1");
+        assertThat(audit.get("actor_type")).isEqualTo("SYSTEM");
+        assertThat(audit.get("actor_id")).isEqualTo("SYSTEM");
+        assertThat(audit.get("source")).isEqualTo("BATCH");
+        assertThat((String) audit.get("after_json")).contains("\"batchId\": 42");
+    }
+
+    @Test
+    void requestSystem_appliesThroughTheQueue_andKeepsNoPublisher() {
+        long id = service.requestSystem(tenantId, productId, 42L, null);
+
+        int ran = 0;
+        while (dispatcher.pollOnce()) {
+            ran++;
+        }
+
+        assertThat(ran).isPositive();
+        Map<String, Object> pub = jdbc.queryForMap("select status, published_by from publication "
+                + "where id = ?", id);
+        assertThat(pub.get("status")).isEqualTo("APPLIED");
+        assertThat(pub.get("published_by")).isNull();
+        assertThat(staging.product.description()).isEqualTo("<p>Long v1</p>");
+    }
+
+    @Test
+    void requestSystem_samePreconditionsAsRequest() {
+        jdbc.update("update asset set status = 'REJECTED' where spec_code = 'PAGE_ANGLE' "
+                + "and variant = 'P4'");
+        assertThatThrownBy(() -> service.requestSystem(tenantId, productId, 42L, null))
+                .isInstanceOfSatisfying(ApiException.class,
+                        ex -> assertThat(ex.getCode()).isEqualTo("PUBLISH_PRECONDITIONS"));
+    }
+
     // ---- review finding 1: exact text from the recorded set ----
 
     @Test

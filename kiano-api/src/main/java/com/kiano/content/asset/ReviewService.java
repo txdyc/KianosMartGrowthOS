@@ -171,15 +171,25 @@ public class ReviewService {
 
     public List<ReviewItem> list(CurrentUser user, @Nullable Long productId,
             @Nullable String status, @Nullable String kind) {
+        return list(user.tenantId(), productId, status, kind);
+    }
+
+    /** The same list without a user; the SYSTEM batch publish uses it (C6). */
+    public List<ReviewItem> list(long tenantId, @Nullable Long productId) {
+        return list(tenantId, productId, null, null);
+    }
+
+    public List<ReviewItem> list(long tenantId, @Nullable Long productId,
+            @Nullable String status, @Nullable String kind) {
         List<AssetEntity> assets = assetMapper.selectList(Wrappers.<AssetEntity>lambdaQuery()
-                .eq(AssetEntity::getTenantId, user.tenantId())
+                .eq(AssetEntity::getTenantId, tenantId)
                 .eq(productId != null, AssetEntity::getProductId, productId)
                 .eq(status != null, AssetEntity::getStatus, status)
                 .eq(kind != null, AssetEntity::getKind, kind)
                 .orderByAsc(AssetEntity::getId));
         List<ReviewItem> items = new ArrayList<>();
         for (AssetEntity asset : assets) {
-            items.add(toItem(user.tenantId(), asset));
+            items.add(toItem(tenantId, asset));
         }
         items.sort(ORDER);
         return items;
