@@ -379,6 +379,7 @@ export const zh: Record<MessageKey, string> = {
   "ads.failed": "失败",
   "ads.replacements": "替换文件（重新上传时使用新文件）",
   "ads.replacementsEmpty": "暂无替换文件。",
+  "ads.includeVideos": "包含短视频（mp4 + 无配乐版本）",
   "ads.copyFileName": "复制",
   "ads.noCopy": "请至少选择一个商品",
   "ads.pending": "排队中",

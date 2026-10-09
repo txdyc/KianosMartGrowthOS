@@ -377,6 +377,7 @@ export const en = {
   "ads.failed": "Failed",
   "ads.replacements": "Replacement files (use the new file when re-uploading)",
   "ads.replacementsEmpty": "No replacements yet.",
+  "ads.includeVideos": "Include short videos (mp4 + no-music version)",
   "ads.copyFileName": "Copy",
   "ads.noCopy": "Select at least one product",
   "ads.pending": "Pending",

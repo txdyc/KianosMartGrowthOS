@@ -20,6 +20,8 @@ export default function AdsPage() {
   const [counts, setCounts] = useState<Record<number, number>>({});
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [exportAll, setExportAll] = useState(false);
+  // C5: ask the export for the three videos of every SKU as well
+  const [includeVideos, setIncludeVideos] = useState(false);
   const [exports, setExports] = useState<AdExportView[]>([]);
   const [replacements, setReplacements] = useState<AdReplacement[]>([]);
   const [exporting, setExporting] = useState(false);
@@ -100,7 +102,10 @@ export default function AdsPage() {
     try {
       const res = await apiFetch<{ publicationId: number }>("/api/v1/content/ads/exports", {
         method: "POST",
-        body: { productIds: exportAll ? [] : [...selected] },
+        body: {
+          productIds: exportAll ? [] : [...selected],
+          parts: includeVideos ? ["STATIC", "VIDEO"] : ["STATIC"],
+        },
       });
       await loadExports();
       setChecking(res.publicationId);
@@ -204,6 +209,15 @@ export default function AdsPage() {
             })}
           </ul>
         )}
+
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={includeVideos}
+            onChange={(e) => setIncludeVideos(e.target.checked)}
+          />
+          <span className="text-zinc-600 dark:text-zinc-400">{t("ads.includeVideos")}</span>
+        </label>
 
         <div className="flex items-center gap-3">
           <button
