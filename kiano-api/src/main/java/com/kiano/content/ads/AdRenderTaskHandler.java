@@ -6,7 +6,9 @@ import com.kiano.platform.queue.TaskContext;
 import com.kiano.platform.queue.TaskHandler;
 import com.kiano.platform.web.ApiException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
 
@@ -46,9 +48,17 @@ public class AdRenderTaskHandler implements TaskHandler {
                 variants.add(variantsNode.get(i).asText());
             }
         }
+        Map<String, Long> autoApproveFrom = null;
+        JsonNode autoApproveNode = ctx.payload().path("autoApproveFrom");
+        if (autoApproveNode.isObject() && !autoApproveNode.isEmpty()) {
+            autoApproveFrom = new LinkedHashMap<>();
+            for (Map.Entry<String, JsonNode> entry : autoApproveNode.properties()) {
+                autoApproveFrom.put(entry.getKey(), entry.getValue().asLong());
+            }
+        }
         try {
             RenderOutcome outcome = renderService.renderAll(tenantId, productId, variants,
-                    frameCandidate, priceOnly);
+                    frameCandidate, priceOnly, autoApproveFrom);
             return outcome;
         } catch (ApiException ex) {
             if (ex.getStatus().is4xxClientError()) {

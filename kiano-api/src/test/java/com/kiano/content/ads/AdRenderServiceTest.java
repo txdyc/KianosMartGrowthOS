@@ -110,6 +110,7 @@ class AdRenderServiceTest {
         bootstrap.bootstrapAll();
         tenantId = jdbcTemplate.queryForObject("select id from tenant where slug = 'kianosmart'",
                 Long.class);
+        jdbcTemplate.update("delete from audit_log where tenant_id = ?", tenantId);
         storeId = jdbcTemplate.queryForObject(
                 "insert into store (tenant_id, platform, base_url) "
                         + "values (?, 'WOOCOMMERCE', 'http://woo.test') returning id",
@@ -294,6 +295,66 @@ class AdRenderServiceTest {
                 .isEqualTo("[]");
     }
 
+    @Test
+    void priceChange_onlyPriceDiffers_autoApproved() {
+        long mainId = jdbcTemplate.queryForObject(
+                "select id from asset where spec_code = 'PAGE_MAIN'", Long.class);
+        long copyId = jdbcTemplate.queryForObject(
+                "select id from asset where spec_code = 'AD_COPY' and variant = 'pricehook'",
+                Long.class);
+        // previous APPROVED render with only the price different from what we render now
+        long oldId = adStaticSeeded("pricehook-1080x1080", 1, "APPROVED",
+                "{\"template\":{\"code\":\"AD_PRICEHOOK\",\"version\":1},"
+                        + "\"adCopyAssetId\":" + copyId + ",\"baseAssetId\":" + mainId + ","
+                        + "\"sourceMediaId\":null,\"frameTime\":null,"
+                        + "\"price\":{\"snapshot\":199}}");
+
+        service.renderAll(tenantId, productId, List.of("pricehook-1080x1080"), 0, true,
+                Map.of("pricehook-1080x1080", oldId));
+
+        String status = jdbcTemplate.queryForObject(
+                "select status from asset where spec_code = 'AD_STATIC' "
+                        + "and variant = 'pricehook-1080x1080' and version = 2",
+                String.class);
+        assertThat(status).isEqualTo("APPROVED");
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from audit_log where action = 'AD_AUTO_APPROVED_PRICE_CHANGE' "
+                        + "and tenant_id = ?", Integer.class, tenantId)).isEqualTo(1);
+    }
+
+    @Test
+    void priceChange_copyChanged_notAutoApproved() {
+        long mainId = jdbcTemplate.queryForObject(
+                "select id from asset where spec_code = 'PAGE_MAIN'", Long.class);
+        long oldCopyId = jdbcTemplate.queryForObject(
+                "select id from asset where spec_code = 'AD_COPY' and variant = 'pricehook'",
+                Long.class);
+        long oldId = adStaticSeeded("pricehook-1080x1080", 1, "APPROVED",
+                "{\"template\":{\"code\":\"AD_PRICEHOOK\",\"version\":1},"
+                        + "\"adCopyAssetId\":" + oldCopyId + ",\"baseAssetId\":" + mainId + "}");
+        // a new approved AD_COPY supersedes the one the old render used
+        AdCopyText newCopy = new AdCopyText("New value angle", headline(AdHook.PRICEHOOK),
+                "A 1.7 L kettle with auto shut-off");
+        jdbcTemplate.queryForObject(
+                "insert into asset (tenant_id, product_id, spec_code, variant, version, kind, "
+                        + "text_body, content_json, status, precheck_json, provenance_json, fact_version) "
+                        + "values (?, ?, 'AD_COPY', 'pricehook', 2, 'TEXT', ?, ?::jsonb, 'APPROVED', "
+                        + "'{}'::jsonb, ?::jsonb, ?) returning id",
+                Long.class, tenantId, productId, newCopy.toJson(),
+                "{\"hook\":\"pricehook\"}", "{}", factVersion);
+
+        service.renderAll(tenantId, productId, List.of("pricehook-1080x1080"), 0, true,
+                Map.of("pricehook-1080x1080", oldId));
+
+        assertThat(jdbcTemplate.queryForObject(
+                "select status from asset where id in (select id from asset where spec_code = 'AD_STATIC' "
+                        + "and variant = 'pricehook-1080x1080' order by version desc limit 1)",
+                String.class)).isEqualTo("IN_REVIEW");
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from audit_log where action = 'AD_AUTO_APPROVED_PRICE_CHANGE' "
+                        + "and tenant_id = ?", Integer.class, tenantId)).isZero();
+    }
+
     // ---- helpers ----
 
     @SuppressWarnings("unchecked")
@@ -363,6 +424,16 @@ class AdRenderServiceTest {
                         + "'{}'::jsonb, ?::jsonb, ?) returning id",
                 Long.class, tenantId, productId, hook.wire(), text.toJson(),
                 "{\"hook\":\"" + hook.wire() + "\"}", "{}", factVersion);
+    }
+
+    /** A pre-rendered AD_STATIC row (no storage object) for auto-approval seeding. */
+    private long adStaticSeeded(String variant, int version, String status, String provenanceJson) {
+        return jdbcTemplate.queryForObject(
+                "insert into asset (tenant_id, product_id, spec_code, variant, version, kind, "
+                        + "status, precheck_json, provenance_json) "
+                        + "values (?, ?, 'AD_STATIC', ?, ?, 'IMAGE', ?, '{}'::jsonb, ?::jsonb) "
+                        + "returning id",
+                Long.class, tenantId, productId, variant, version, status, provenanceJson);
     }
 
     private long media(long productId, String shotCode, String kind, String status,

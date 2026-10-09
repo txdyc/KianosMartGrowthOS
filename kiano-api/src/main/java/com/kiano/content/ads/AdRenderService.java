@@ -18,9 +18,13 @@ import com.kiano.content.media.SourceMediaMapper;
 import com.kiano.content.policy.PolicySection;
 import com.kiano.content.policy.PolicyService;
 import com.kiano.content.profile.ProductProfileService;
+import com.kiano.content.template.TemplateEntity;
 import com.kiano.content.template.TemplateRegistry;
 import com.kiano.content.template.TemplateRenderer;
 import com.kiano.content.template.TemplateRenderer.Rect;
+import com.kiano.platform.audit.ActorType;
+import com.kiano.platform.audit.AuditEntry;
+import com.kiano.platform.audit.AuditLog;
 import com.kiano.platform.web.ApiException;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -31,6 +35,7 @@ import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -73,13 +78,14 @@ public class AdRenderService {
     private final AdModelBuilder modelBuilder;
     private final PolicyService policyService;
     private final SourceMediaMapper sourceMediaMapper;
+    private final AuditLog auditLog;
     private final ObjectMapper objectMapper;
 
     public AdRenderService(ProductCatalog productCatalog, ProductProfileService profileService,
             FactSheetService factSheetService, TemplateRenderer renderer,
             TemplateRegistry templates, AssetMapper assetMapper, AssetService assetService,
             AdBaseSelector baseSelector, AdModelBuilder modelBuilder, PolicyService policyService,
-            SourceMediaMapper sourceMediaMapper, ObjectMapper objectMapper) {
+            SourceMediaMapper sourceMediaMapper, AuditLog auditLog, ObjectMapper objectMapper) {
         this.productCatalog = productCatalog;
         this.profileService = profileService;
         this.factSheetService = factSheetService;
@@ -91,6 +97,7 @@ public class AdRenderService {
         this.modelBuilder = modelBuilder;
         this.policyService = policyService;
         this.sourceMediaMapper = sourceMediaMapper;
+        this.auditLog = auditLog;
         this.objectMapper = objectMapper;
     }
 
@@ -114,6 +121,20 @@ public class AdRenderService {
      */
     public RenderOutcome renderAll(long tenantId, long productId,
             @Nullable List<String> variantKeys, int frameCandidate, boolean priceOnly) {
+        return renderAll(tenantId, productId, variantKeys, frameCandidate, priceOnly, null);
+    }
+
+    /**
+     * Price-only re-render (called after a price change): when
+     * {@code autoApproveFrom} maps a variant to its previous asset id, the new
+     * render is auto-approved if only the price changed - the template code and
+     * version, the AD_COPY asset and the base (source media + frame for demo)
+     * are all the same and the template is still APPROVED. Missing copy or base
+     * then fails that variant only (its previous version stays STALE).
+     */
+    public RenderOutcome renderAll(long tenantId, long productId,
+            @Nullable List<String> variantKeys, int frameCandidate, boolean priceOnly,
+            @Nullable Map<String, Long> autoApproveFrom) {
         checkPreconditions(tenantId, productId, priceOnly);
         ProductView product = productCatalog.findById(tenantId, productId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND",
@@ -129,7 +150,7 @@ public class AdRenderService {
         for (AdVariant target : targets) {
             try {
                 renderVariant(tenantId, product, target, frameCandidate, factVersion, warranty,
-                        price);
+                        price, autoApproveFrom);
                 rendered.add(target.variant());
             } catch (ApiException ex) {
                 skipped.put(target.variant(), ex.getCode());
@@ -181,7 +202,8 @@ public class AdRenderService {
     }
 
     private void renderVariant(long tenantId, ProductView product, AdVariant target,
-            int frameCandidate, int factVersion, @Nullable String warranty, PriceDisplay price) {
+            int frameCandidate, int factVersion, @Nullable String warranty, PriceDisplay price,
+            @Nullable Map<String, Long> autoApproveFrom) {
         AdHook hook = target.hook();
         AdSize size = target.size();
         String code = templateCode(hook);
@@ -242,6 +264,82 @@ public class AdRenderService {
                             "flags", flags.stream().map(Enum::name).toList(),
                             "metrics", Map.of()))));
         }
+        maybeAutoApprove(tenantId, product.id(), target, view.id(), provenance, price,
+                autoApproveFrom);
+    }
+
+    /**
+     * Task 8 auto-approval: only when the previous render (the STALE asset from
+     * the price-change listener) used the same template code/version, the same
+     * AD_COPY asset and the same base - for demo that means the same V1 source
+     * media and frame time - and that template version is still APPROVED. In
+     * every other case the new version stays IN_REVIEW for a human.
+     */
+    private void maybeAutoApprove(long tenantId, long productId, AdVariant target, long newAssetId,
+            Map<String, Object> provenance, PriceDisplay price,
+            @Nullable Map<String, Long> autoApproveFrom) {
+        if (autoApproveFrom == null) {
+            return;
+        }
+        Long oldId = autoApproveFrom.get(target.variant());
+        if (oldId == null) {
+            return;
+        }
+        AssetEntity old = assetMapper.selectById(oldId);
+        if (old == null) {
+            return;
+        }
+        String code = templateCode(target.hook());
+        JsonNode oldProv = readProvenance(old);
+        JsonNode newProv = objectMapper.valueToTree(provenance);
+        if (!sameField(oldProv, newProv, "template", "code")
+                || oldProv.path("template").path("version").asInt()
+                        != newProv.path("template").path("version").asInt()) {
+            return;
+        }
+        // the template version must still be the APPROVED one
+        Optional<TemplateEntity> approved = templates.latestApproved(tenantId, code);
+        if (approved.isEmpty() || approved.get().getVersion()
+                != newProv.path("template").path("version").asInt()) {
+            return;
+        }
+        if (oldProv.path("adCopyAssetId").asLong() != newProv.path("adCopyAssetId").asLong()) {
+            return;
+        }
+        boolean sameBase = target.hook() == AdHook.DEMO
+                ? oldProv.path("sourceMediaId").asLong() == newProv.path("sourceMediaId").asLong()
+                        && oldProv.path("frameTime").asDouble()
+                                == newProv.path("frameTime").asDouble()
+                : oldProv.path("baseAssetId").asLong() == newProv.path("baseAssetId").asLong();
+        if (!sameBase) {
+            return;
+        }
+        assetMapper.update(null, new LambdaUpdateWrapper<AssetEntity>()
+                .eq(AssetEntity::getId, newAssetId)
+                .set(AssetEntity::getStatus, AssetStatus.APPROVED.name()));
+        Map<String, Object> before = new LinkedHashMap<>();
+        before.put("variant", target.variant());
+        before.put("priceSnapshot", old.getPriceSnapshot());
+        Map<String, Object> after = new LinkedHashMap<>();
+        after.put("variant", target.variant());
+        after.put("priceSnapshot", price.snapshot());
+        after.put("assetId", newAssetId);
+        auditLog.record(new AuditEntry(tenantId, ActorType.SYSTEM, "SYSTEM",
+                "AD_AUTO_APPROVED_PRICE_CHANGE", "asset", String.valueOf(newAssetId),
+                before, after, null, "ADS"));
+    }
+
+    private JsonNode readProvenance(AssetEntity asset) {
+        try {
+            return objectMapper.readTree(asset.getProvenanceJson());
+        } catch (RuntimeException ex) {
+            throw new IllegalArgumentException("Invalid provenance on asset "
+                    + asset.getId(), ex);
+        }
+    }
+
+    private static boolean sameField(JsonNode a, JsonNode b, String parent, String field) {
+        return a.path(parent).path(field).asText().equals(b.path(parent).path(field).asText());
     }
 
     /** 9:16 text must stay inside y [269, 1248]; other sizes have no constraint. */
