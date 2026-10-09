@@ -3,6 +3,11 @@ package com.kiano.content.asset;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.kiano.commerce.ProductCatalog;
 import com.kiano.commerce.ProductView;
+import com.kiano.content.ads.AdCopyTaskHandler;
+import com.kiano.content.ads.AdCopyText;
+import com.kiano.content.ads.AdHook;
+import com.kiano.content.ads.AdRenderTaskHandler;
+import com.kiano.content.ads.FrameExtractor;
 import com.kiano.content.asset.AssetService.AssetView;
 import com.kiano.content.copy.CopyAssembler;
 import com.kiano.content.copy.PlainText;
@@ -24,6 +29,10 @@ import com.kiano.platform.queue.TaskQueue;
 import com.kiano.platform.storage.ObjectStorage;
 import com.kiano.platform.web.ApiException;
 import com.kiano.workerprotocol.JobStep;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -56,13 +65,39 @@ public class ReviewService {
     private static final Map<String, Integer> SPEC_ORDER = Map.ofEntries(
             Map.entry("PAGE_MAIN", 0), Map.entry("PAGE_ANGLE", 1), Map.entry("PAGE_SCENE", 2),
             Map.entry("PAGE_INBOX", 3), Map.entry("PAGE_INFO", 4), Map.entry("PAGE_SPEC", 5),
-            Map.entry("COPY_TITLE", 10), Map.entry("COPY_SHORT", 11), Map.entry("COPY_LONG", 12),
-            Map.entry("COPY_SEO", 13), Map.entry("COPY_GSHOP", 14), Map.entry("COPY_WA", 15));
+            Map.entry("AD_STATIC", 7), Map.entry("COPY_TITLE", 10), Map.entry("COPY_SHORT", 11),
+            Map.entry("COPY_LONG", 12), Map.entry("COPY_SEO", 13), Map.entry("COPY_GSHOP", 14),
+            Map.entry("COPY_WA", 15), Map.entry("AD_COPY", 16));
     private static final Comparator<ReviewItem> ORDER = Comparator
             .comparing((ReviewItem item) -> item.flags().isEmpty())
             .thenComparing(ReviewItem::sku, Comparator.nullsLast(Comparator.naturalOrder()))
             .thenComparing(item -> SPEC_ORDER.getOrDefault(item.specCode(), 9))
+            .thenComparing(ReviewService::adVariantKey,
+                    Comparator.nullsLast(Comparator.naturalOrder()))
             .thenComparing(ReviewItem::variant, Comparator.nullsLast(Comparator.naturalOrder()));
+
+    /** AD_STATIC variants sort by hook order then size, not their hyphenated name. */
+    private static @Nullable Integer adVariantKey(ReviewItem item) {
+        if (!"AD_STATIC".equals(item.specCode()) || item.variant() == null) {
+            return null;
+        }
+        int dash = item.variant().indexOf('-');
+        if (dash <= 0) {
+            return null;
+        }
+        AdHook hook;
+        try {
+            hook = AdHook.fromWire(item.variant().substring(0, dash));
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
+        int sizeIndex = switch (item.variant().substring(dash + 1)) {
+            case "1080x1080" -> 0;
+            case "1080x1350" -> 1;
+            default -> 2;
+        };
+        return hook.ordinal() * 4 + sizeIndex;
+    }
 
     private final AssetMapper assetMapper;
     private final AssetReviewMapper reviewMapper;
@@ -80,6 +115,7 @@ public class ReviewService {
     private final AssetService assetService;
     private final TextPrecheck textPrecheck;
     private final FactSheetService factSheetService;
+    private final FrameExtractor frameExtractor;
     private final SecureRandom random = new SecureRandom();
 
     public ReviewService(AssetMapper assetMapper, AssetReviewMapper reviewMapper,
@@ -88,7 +124,7 @@ public class ReviewService {
             WorkflowRegistry workflowRegistry, AuditLog auditLog, ObjectMapper objectMapper,
             JdbcTemplate jdbcTemplate, ApplicationEventPublisher events, TaskQueue queue,
             AssetService assetService, TextPrecheck textPrecheck,
-            FactSheetService factSheetService) {
+            FactSheetService factSheetService, FrameExtractor frameExtractor) {
         this.assetMapper = assetMapper;
         this.reviewMapper = reviewMapper;
         this.sourceMediaMapper = sourceMediaMapper;
@@ -105,6 +141,7 @@ public class ReviewService {
         this.assetService = assetService;
         this.textPrecheck = textPrecheck;
         this.factSheetService = factSheetService;
+        this.frameExtractor = frameExtractor;
     }
 
     public enum Decision {
@@ -234,12 +271,21 @@ public class ReviewService {
                     "Asset " + assetId + " is " + asset.getStatus() + ", not editable");
         }
         boolean htmlSpec = List.of("COPY_LONG", "COPY_SHORT").contains(asset.getSpecCode());
+        boolean adCopy = "AD_COPY".equals(asset.getSpecCode());
         if (htmlSpec && !Jsoup.isValid(textBody, HTML_SAFELIST)) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "TEXT_HTML_NOT_ALLOWED",
                     "Only p, ul, li, table, tr, th, td, h2, h3, strong, em and the policy "
                             + "block markup are allowed in " + asset.getSpecCode());
         }
-        if (!htmlSpec && PlainText.hasMarkup(textBody)) {
+        if (adCopy) {
+            // the body must stay a parseable ad copy JSON object
+            try {
+                AdCopyText.fromJson(textBody);
+            } catch (IllegalArgumentException ex) {
+                throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "AD_COPY_INVALID",
+                        "Ad copy must be a JSON object with overlay, headline and primaryText");
+            }
+        } else if (!htmlSpec && PlainText.hasMarkup(textBody)) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "TEXT_HTML_NOT_ALLOWED",
                     asset.getSpecCode() + " is plain text; HTML tags are not allowed");
         }
@@ -280,11 +326,27 @@ public class ReviewService {
         if (locked == null || locked.version() != factVersion) {
             return new PrecheckResult(List.of(), Map.of());
         }
+        if ("AD_COPY".equals(asset.getSpecCode())) {
+            try {
+                return textPrecheck.checkAdCopy(AdCopyText.fromJson(textBody), locked.facts());
+            } catch (IllegalArgumentException ex) {
+                throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "AD_COPY_INVALID",
+                        "Ad copy must be a JSON object with overlay, headline and primaryText");
+            }
+        }
         return textPrecheck.check(asset.getSpecCode(), textBody, locked.facts());
     }
 
     /** Recreates the job that produced the asset under a fresh run. */
     private @Nullable Long regenerate(CurrentUser user, AssetEntity asset) {
+        if ("AD_COPY".equals(asset.getSpecCode())) {
+            enqueueAdCopyRegenerate(asset);
+            return null;
+        }
+        if ("AD_STATIC".equals(asset.getSpecCode())) {
+            enqueueAdStaticRegenerate(asset);
+            return null;
+        }
         String pipelineRef = jdbcTemplate.queryForObject(
                 "select pipeline_ref from asset_spec where code = ?", String.class,
                 asset.getSpecCode());
@@ -301,6 +363,94 @@ public class ReviewService {
                     "Assets of spec " + asset.getSpecCode() + " cannot be regenerated yet");
         }
         return runId;
+    }
+
+    /** AD_COPY regenerates by re-running the LLM for that hook only. */
+    private void enqueueAdCopyRegenerate(AssetEntity asset) {
+        Integer factVersion = asset.getFactVersion();
+        if (factVersion == null) {
+            throw new ApiException(HttpStatus.CONFLICT, "REGENERATE_NOT_POSSIBLE",
+                    "Ad copy has no fact version to regenerate against");
+        }
+        Optional<Long> taskId = queue.enqueue(asset.getTenantId(), AdCopyTaskHandler.TYPE,
+                Map.of("productId", asset.getProductId(), "factVersion", factVersion,
+                        "onlyHook", asset.getVariant()),
+                "ad-copy:" + asset.getProductId() + ":" + factVersion + ":regen"
+                        + ":" + asset.getVariant());
+        if (taskId.isEmpty()) {
+            throw new ApiException(HttpStatus.CONFLICT, "REGENERATE_IN_PROGRESS",
+                    "An ad copy regeneration for this hook is already queued or running");
+        }
+    }
+
+    /** An AD_STATIC re-renders from the same copy and base; demo advances the frame. */
+    private void enqueueAdStaticRegenerate(AssetEntity asset) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("productId", asset.getProductId());
+        payload.put("variants", List.of(asset.getVariant()));
+        int frameCandidate = nextFrameCandidate(asset);
+        if (frameCandidate > 0) {
+            payload.put("frameCandidate", frameCandidate);
+        }
+        Optional<Long> taskId = queue.enqueue(asset.getTenantId(), AdRenderTaskHandler.TYPE,
+                payload, "ad-render:" + asset.getProductId() + ":regen:" + asset.getVariant());
+        if (taskId.isEmpty()) {
+            throw new ApiException(HttpStatus.CONFLICT, "REGENERATE_IN_PROGRESS",
+                    "An ad render for this variant is already queued or running");
+        }
+    }
+
+    /** The next candidate frame after the one the demo static used. */
+    private int nextFrameCandidate(AssetEntity asset) {
+        if (asset.getVariant() == null || !asset.getVariant().startsWith("demo-")) {
+            return 0;
+        }
+        JsonNode provenance = objectMapper.readTree(asset.getProvenanceJson());
+        if (!provenance.path("frameTime").isNumber()) {
+            return 0;
+        }
+        double oldTime = provenance.path("frameTime").asDouble();
+        SourceMediaEntity video = sourceMediaMapper.selectOne(Wrappers.<SourceMediaEntity>lambdaQuery()
+                .eq(SourceMediaEntity::getTenantId, asset.getTenantId())
+                .eq(SourceMediaEntity::getProductId, asset.getProductId())
+                .eq(SourceMediaEntity::getShotCode, "V1")
+                .eq(SourceMediaEntity::getKind, "VIDEO")
+                .eq(SourceMediaEntity::getStatus, "ACCEPTED")
+                .orderByDesc(SourceMediaEntity::getId)
+                .last("limit 1"));
+        if (video == null) {
+            return 0;
+        }
+        byte[] bytes = storage.download(video.getObjectKey());
+        Path temp;
+        try {
+            String suffix = video.getOriginalFileName() != null
+                    && video.getOriginalFileName().contains(".")
+                            ? video.getOriginalFileName()
+                                    .substring(video.getOriginalFileName().lastIndexOf('.'))
+                            : ".mp4";
+            temp = Files.createTempFile("ad-regen-frame", suffix);
+            Files.write(temp, bytes);
+        } catch (IOException ex) {
+            throw new UncheckedIOException(ex);
+        }
+        try {
+            double duration = video.getDurationS() == null ? 0
+                    : video.getDurationS().doubleValue();
+            List<FrameExtractor.Frame> frames = frameExtractor.candidates(temp, duration);
+            for (int i = 0; i < frames.size(); i++) {
+                if (Math.abs(frames.get(i).timeSeconds() - oldTime) < 0.001) {
+                    return (i + 1) % frames.size();
+                }
+            }
+            return 0;
+        } finally {
+            try {
+                Files.deleteIfExists(temp);
+            } catch (IOException ignored) {
+                // best effort cleanup
+            }
+        }
     }
 
     /** Text assets regenerate by re-running the copy generator for that spec. */
