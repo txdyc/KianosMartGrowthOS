@@ -187,6 +187,17 @@ public class GenerationJobStore {
                 reason, tenantId, jobId) > 0;
     }
 
+    /**
+     * Cancels the batch's jobs that no worker has leased yet (C6 cancel):
+     * already leased or finished work is kept.
+     */
+    public int cancelBatchJobs(long tenantId, long batchId, String reason) {
+        return jdbcTemplate.update(
+                "update generation_job set status='CANCELLED', error=?, finished_at=now() "
+                        + "where tenant_id = ? and batch_id = ? and status in ('QUEUED','WAITING_EXECUTOR')",
+                reason, tenantId, batchId);
+    }
+
     /** Sum of completed job costs for one executor since the given instant (budget checks). */
     public java.math.BigDecimal costSince(long tenantId, ExecutorType executor, Instant since) {
         java.math.BigDecimal total = jdbcTemplate.queryForObject(

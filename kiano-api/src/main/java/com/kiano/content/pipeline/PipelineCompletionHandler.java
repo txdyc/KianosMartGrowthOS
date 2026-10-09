@@ -86,7 +86,7 @@ public class PipelineCompletionHandler implements JobCompletionListener {
         input.put("composer", Map.of("canvas", CANVAS, "occupancy", WHITE_OCCUPANCY));
         input.put("inputs", Map.of("cutout", cutout.input().path("outputs").path("cutout").asString()));
         long jobId = jobs.create(cutout.tenantId(), cutout.productId(), cutout.runId(), step,
-                variant, input, List.of(cutout.id()));
+                variant, input, List.of(cutout.id()), priorityOf(cutout));
         backfillOutputs(jobId, Map.of("image", objectKey(cutout.tenantId(), jobId, "image")));
     }
 
@@ -100,7 +100,7 @@ public class PipelineCompletionHandler implements JobCompletionListener {
                 "canvas", CANVAS, "occupancy", SCENE_OCCUPANCY, "bottomMargin", SCENE_BOTTOM_MARGIN));
         input.put("inputs", Map.of("cutout", cutout.input().path("outputs").path("cutout").asString()));
         long jobId = jobs.create(cutout.tenantId(), cutout.productId(), cutout.runId(),
-                JobStep.SCENE_INPUT, variant, input, List.of(cutout.id()));
+                JobStep.SCENE_INPUT, variant, input, List.of(cutout.id()), priorityOf(cutout));
         backfillOutputs(jobId, Map.of(
                 "image", objectKey(cutout.tenantId(), jobId, "image"),
                 "mask", objectKey(cutout.tenantId(), jobId, "mask")));
@@ -140,8 +140,17 @@ public class PipelineCompletionHandler implements JobCompletionListener {
                 "mask", parent.output().path("outputs").path("mask").path("objectKey").asString()));
         input.put("outputs", Map.of());
         long jobId = jobs.create(parent.tenantId(), parent.productId(), parent.runId(), JobStep.SCENE,
-                parent.variant(), input, List.of(parent.id()));
+                parent.variant(), input, List.of(parent.id()), priorityOf(parent));
         backfillOutputs(jobId, Map.of("image", objectKey(parent.tenantId(), jobId, "image")));
+    }
+
+    /**
+     * Downstream jobs inherit the parent's lease priority, batch id and night
+     * flag (C6 Review Focus 1): a batch's scene work must not jump ahead of
+     * interactive work or run outside its window.
+     */
+    private static GenerationJobStore.JobPriority priorityOf(GenerationJob job) {
+        return new GenerationJobStore.JobPriority(job.priority(), job.batchId(), job.nightOnly());
     }
 
     private void createAsset(GenerationJob job) {

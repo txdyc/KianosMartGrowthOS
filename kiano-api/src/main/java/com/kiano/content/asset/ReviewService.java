@@ -538,8 +538,10 @@ public class ReviewService {
         input.put("params", Map.of());
         input.put("inputs", Map.of("image", source.getObjectKey()));
         input.put("outputs", Map.of());
+        // a review regenerate is interactive work: priority 0, even when the
+        // product sits in a running batch (C6 Review Focus 1)
         long jobId = jobs.create(tenantId, asset.getProductId(), runId, JobStep.CUTOUT,
-                source.getShotCode(), input, List.of());
+                source.getShotCode(), input, List.of(), GenerationJobStore.JobPriority.INTERACTIVE);
         backfillOutputs(jobId, Map.of("cutout", "t" + tenantId + "/gen/" + jobId + "/cutout.png"));
     }
 
@@ -575,7 +577,8 @@ public class ReviewService {
                         .asString()));
         newInput.put("outputs", Map.of());
         long jobId = jobs.create(tenantId, asset.getProductId(), runId, JobStep.SCENE,
-                sceneJob.variant(), newInput, List.of(sceneInput.id()));
+                sceneJob.variant(), newInput, List.of(sceneInput.id()),
+                GenerationJobStore.JobPriority.INTERACTIVE);
         backfillOutputs(jobId, Map.of("image", "t" + tenantId + "/gen/" + jobId + "/image.png"));
     }
 

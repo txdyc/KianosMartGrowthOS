@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -64,32 +65,48 @@ public class PipelineService {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    @Transactional
+    /** Interactive start: priority 0, audited as the operator (the C2 behavior). */
     public long start(CurrentUser user, long productId) {
-        ProductView product = productCatalog.findById(user.tenantId(), productId)
+        return start(user.tenantId(), productId, user.userId(), ActorType.USER,
+                String.valueOf(user.userId()), "PIPELINE", GenerationJobStore.JobPriority.INTERACTIVE);
+    }
+
+    /**
+     * Batch start (C6): the cutouts carry the batch's priority, batch id and
+     * night flag; the run has no created_by and the audit is SYSTEM/BATCH.
+     */
+    public long startForBatch(long tenantId, long productId, long batchId, boolean nightOnly) {
+        return start(tenantId, productId, null, ActorType.SYSTEM, "SYSTEM", "BATCH",
+                GenerationJobStore.JobPriority.batch(batchId, nightOnly));
+    }
+
+    @Transactional
+    public long start(long tenantId, long productId, @Nullable Long createdBy, ActorType actor,
+            String actorId, String auditSource, GenerationJobStore.JobPriority priority) {
+        ProductView product = productCatalog.findById(tenantId, productId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND",
                         "Product not found"));
         if (product.parentId() != null) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "NOT_TOP_LEVEL",
                     "Only top-level products can run the image pipeline");
         }
-        if (runs.hasActive(user.tenantId(), productId)) {
+        if (runs.hasActive(tenantId, productId)) {
             throw new ApiException(HttpStatus.CONFLICT, "PIPELINE_RUNNING",
                     "The image pipeline is already running for this product");
         }
-        Map<String, SourceMediaEntity> media = currentMedia(user.tenantId(), productId);
+        Map<String, SourceMediaEntity> media = currentMedia(tenantId, productId);
         SourceMediaEntity p1 = media.get("P1");
         if (p1 == null || !"ACCEPTED".equals(p1.getStatus())) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "SHOTS_NOT_READY",
                     "P1 must be ACCEPTED before the pipeline can run",
                     Map.of("missing", List.of("P1")));
         }
-        ComfyWorkflowView cutoutWorkflow = workflowRegistry.active(user.tenantId(), "CUTOUT")
+        ComfyWorkflowView cutoutWorkflow = workflowRegistry.active(tenantId, "CUTOUT")
                 .orElseThrow(() -> workflowNotActive("CUTOUT"));
-        workflowRegistry.active(user.tenantId(), "SCENE")
+        workflowRegistry.active(tenantId, "SCENE")
                 .orElseThrow(() -> workflowNotActive("SCENE"));
 
-        ContentTier tier = profileService.tierOf(user.tenantId(), productId);
+        ContentTier tier = profileService.tierOf(tenantId, productId);
         int sceneCount = properties.getSceneCount().getOrDefault(tier.name(), 2);
 
         // Plan: shot code -> its downstream steps. One cutout per shot; when a
@@ -121,7 +138,7 @@ public class PipelineService {
             }
         }
 
-        long runId = runs.create(user.tenantId(), productId, user.userId());
+        long runId = runs.create(tenantId, productId, createdBy);
         for (Map.Entry<String, List<Map<String, String>>> entry : downstreamByShot.entrySet()) {
             String shot = entry.getKey();
             SourceMediaEntity source = media.get(shot);
@@ -133,22 +150,22 @@ public class PipelineService {
                             Map.of("positive", prompt.positive(), "negative", prompt.negative()));
                 }
             }
-            createCutoutJob(user.tenantId(), productId, runId, shot, source, entry.getValue(),
-                    scenePrompts, cutoutWorkflow);
+            createCutoutJob(tenantId, productId, runId, shot, source, entry.getValue(),
+                    scenePrompts, cutoutWorkflow, priority);
         }
 
-        auditLog.record(new AuditEntry(user.tenantId(), ActorType.USER,
-                String.valueOf(user.userId()), "IMAGE_PIPELINE_STARTED", "product",
-                String.valueOf(productId), null,
+        auditLog.record(new AuditEntry(tenantId, actor, actorId, "IMAGE_PIPELINE_STARTED",
+                "product", String.valueOf(productId), null,
                 Map.of("runId", runId, "cutouts", downstreamByShot.size(), "tier", tier.name()),
-                null, "PIPELINE"));
+                null, auditSource));
         return runId;
     }
 
     /** Creates the cutout job, then back-fills the job-id-dependent output key. */
     private void createCutoutJob(long tenantId, long productId, long runId, String shot,
             SourceMediaEntity source, List<Map<String, String>> downstream,
-            Map<String, Object> scenePrompts, ComfyWorkflowView workflow) {
+            Map<String, Object> scenePrompts, ComfyWorkflowView workflow,
+            GenerationJobStore.JobPriority priority) {
         Map<String, Object> input = new LinkedHashMap<>();
         input.put("sourceMediaId", source.getId());
         input.put("shotCode", shot);
@@ -164,7 +181,7 @@ public class PipelineService {
         input.put("inputs", Map.of("image", source.getObjectKey()));
         input.put("outputs", Map.of());
         long jobId = jobs.create(tenantId, productId, runId, com.kiano.workerprotocol.JobStep.CUTOUT,
-                shot, input, List.of());
+                shot, input, List.of(), priority);
         backfillOutputs(jobId, Map.of("cutout",
                 "t" + tenantId + "/gen/" + jobId + "/cutout.png"));
     }
