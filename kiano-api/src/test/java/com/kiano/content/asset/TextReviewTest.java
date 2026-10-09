@@ -207,4 +207,26 @@ class TextReviewTest {
         assertThat(jdbcTemplate.queryForObject("select status from asset where id = ?",
                 String.class, id)).isEqualTo("ARCHIVED");
     }
+
+    @Test
+    void editVideoScript_invalidJsonOrMarkup_422() {
+        long id = textAsset("VIDEO_SCRIPT", "IN_REVIEW",
+                "{\"hook\":\"Watch it boil\",\"captions\":[\"Auto shut-off\",\"1.7 L\",\"Safe\"]}",
+                "{\"type\":\"demo\"}", 1);
+
+        assertThatThrownBy(() -> reviewService.editText(user, id, "not json at all"))
+                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+                    assertThat(ex.getCode()).isEqualTo("VIDEO_SCRIPT_INVALID");
+                });
+        assertThatThrownBy(() -> reviewService.editText(user, id,
+                "{\"hook\":\"<img src=x onerror=1>\",\"captions\":[\"a\",\"b\",\"c\"]}"))
+                .isInstanceOfSatisfying(ApiException.class,
+                        ex -> assertThat(ex.getCode()).isEqualTo("TEXT_HTML_NOT_ALLOWED"));
+        // a valid clean JSON edit creates a new IN_REVIEW version
+        ReviewService.ReviewItem edited = reviewService.editText(user, id,
+                "{\"hook\":\"Watch it boil fast\",\"captions\":[\"Auto shut-off\",\"1.7 L\",\"Safe\"]}");
+        assertThat(edited.version()).isEqualTo(2);
+        assertThat(edited.status()).isEqualTo("IN_REVIEW");
+    }
 }

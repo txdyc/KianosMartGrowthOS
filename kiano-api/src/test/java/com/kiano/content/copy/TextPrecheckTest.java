@@ -117,4 +117,28 @@ class TextPrecheckTest {
                 "Auto shut-off", "Boils in minutes", "Fast and safe");
         assertThat(precheck.checkAdCopy(clean, facts()).flags()).isEmpty();
     }
+
+    @Test
+    void videoScript_priceTooLongOrFiveCaptions_flagged() {
+        com.kiano.content.video.VideoScriptText price = new com.kiano.content.video.VideoScriptText(
+                "Hot water fast", List.of("Now only GH₵ 250", "Boils quickly", "Safe"));
+        PrecheckResult priceResult = precheck.checkVideoScript(price, facts());
+        assertThat(priceResult.flags()).contains(PrecheckFlag.PRICE_IN_COPY);
+
+        com.kiano.content.video.VideoScriptText tooLong = new com.kiano.content.video.VideoScriptText(
+                "x".repeat(41), List.of("ok", "also ok", "fine"));
+        PrecheckResult longResult = precheck.checkVideoScript(tooLong, facts());
+        assertThat(longResult.flags()).contains(PrecheckFlag.TOO_LONG);
+        assertThat(longResult.metrics().get("field")).isEqualTo("hook");
+
+        com.kiano.content.video.VideoScriptText fiveCaptions = new com.kiano.content.video.VideoScriptText(
+                "short hook", List.of("one", "two", "three", "four", "five"));
+        PrecheckResult countResult = precheck.checkVideoScript(fiveCaptions, facts());
+        assertThat(countResult.flags()).contains(PrecheckFlag.CAPTION_COUNT);
+        assertThat(countResult.metrics().get("field")).isEqualTo("captions");
+
+        com.kiano.content.video.VideoScriptText clean = new com.kiano.content.video.VideoScriptText(
+                "Watch it boil", List.of("Auto shut-off", "Stainless steel", "1.5 L"));
+        assertThat(precheck.checkVideoScript(clean, facts()).flags()).isEmpty();
+    }
 }

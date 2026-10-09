@@ -34,7 +34,8 @@ public class FactDependentAssets {
 
     private static final List<String> DERIVED_SPECS =
             List.of("COPY_TITLE", "COPY_SHORT", "COPY_LONG", "COPY_SEO", "COPY_GSHOP",
-                    "COPY_WA", "PAGE_INFO", "PAGE_SPEC", "AD_COPY", "AD_STATIC");
+                    "COPY_WA", "PAGE_INFO", "PAGE_SPEC", "AD_COPY", "AD_STATIC",
+                    "VIDEO_SCRIPT", "VIDEO_AD");
 
     private final AssetMapper assetMapper;
     private final FactSheetService factSheetService;
@@ -92,6 +93,9 @@ public class FactDependentAssets {
             queue.enqueue(tenantId, AdCopyTaskHandler.TYPE,
                     Map.of("productId", productId, "factVersion", version),
                     "ad-copy:" + productId + ":" + version);
+            queue.enqueue(tenantId, com.kiano.content.video.VideoScriptTaskHandler.TYPE,
+                    Map.of("productId", productId, "factVersion", version),
+                    "video-script:" + productId + ":" + version);
         }
     }
 

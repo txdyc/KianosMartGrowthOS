@@ -176,6 +176,29 @@ class LlmRouteStoreTest {
     }
 
     @Test
+    void videoScript_resolvesCopyRoute_keepsPurpose() {
+        long providerId = store.createProvider(tenantId, "DeepSeek",
+                ProviderKind.OPENAI_COMPATIBLE, "https://api.deepseek.com", "sk-vs-1");
+        store.saveRoute(tenantId, LlmPurpose.COPY, providerId, "deepseek-flash", true,
+                new Pricing(new BigDecimal("0.30"), new BigDecimal("1.20"),
+                        new BigDecimal("0.006")));
+
+        ResolvedRoute video = store.resolve(tenantId, LlmPurpose.VIDEO_SCRIPT);
+
+        assertThat(video.purpose()).isEqualTo(LlmPurpose.VIDEO_SCRIPT);
+        assertThat(video.kind()).isEqualTo(ProviderKind.OPENAI_COMPATIBLE);
+        assertThat(video.model()).isEqualTo("deepseek-flash");
+        assertThat(video.apiKey()).isEqualTo("sk-vs-1");
+        assertThat(video.usingDefault()).isFalse();
+
+        // no route at all → env default keeps the VIDEO_SCRIPT purpose too
+        store.deleteRoute(tenantId, LlmPurpose.COPY);
+        ResolvedRoute defaultVideo = store.resolve(tenantId, LlmPurpose.VIDEO_SCRIPT);
+        assertThat(defaultVideo.usingDefault()).isTrue();
+        assertThat(defaultVideo.purpose()).isEqualTo(LlmPurpose.VIDEO_SCRIPT);
+    }
+
+    @Test
     void listRoutes_alwaysHasBothPurposes() {
         long providerId = store.createProvider(tenantId, "DeepSeek",
                 ProviderKind.OPENAI_COMPATIBLE, "https://api.deepseek.com", "sk-x-2");

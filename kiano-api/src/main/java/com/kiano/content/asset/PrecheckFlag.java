@@ -15,5 +15,7 @@ public enum PrecheckFlag {
     MISSING_PLACEHOLDER,
     POLICY_PENDING,
     // Ad-static flags (C4a)
-    TEXT_OUTSIDE_SAFE_AREA
+    TEXT_OUTSIDE_SAFE_AREA,
+    // Video-script flags (C5)
+    CAPTION_COUNT
 }

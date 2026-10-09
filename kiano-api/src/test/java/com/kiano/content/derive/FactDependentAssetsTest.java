@@ -251,4 +251,17 @@ class FactDependentAssetsTest {
         assertThat(queue.latest(tenantId, "AD_COPY_GENERATE")).isEmpty();
         assertThat(queue.latest(tenantId, "COPY_GENERATE")).isPresent();
     }
+
+    @Test
+    void factLock_onHero_enqueuesVideoScript() {
+        jdbcTemplate.update("insert into product_profile (product_id, tenant_id, content_tier) "
+                + "values (?, ?, 'HERO')", productId, tenantId);
+        lockFacts();
+
+        assertThat(queue.latest(tenantId, "VIDEO_SCRIPT_GENERATE")).isPresent();
+        assertThat(jdbcTemplate.queryForObject(
+                "select payload from platform_task where tenant_id = ? and type = 'VIDEO_SCRIPT_GENERATE'",
+                String.class, tenantId)).contains(String.valueOf(factSheetService
+                        .locked(tenantId, productId).get().version()));
+    }
 }

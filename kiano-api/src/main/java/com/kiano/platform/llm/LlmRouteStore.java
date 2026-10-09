@@ -53,11 +53,15 @@ public class LlmRouteStore {
      * Resolves the effective route for a purpose: configured route (provider
      * joined, key decrypted, updatedAt = later of route/provider) or the env
      * default Anthropic route with providerId null and usingDefault true.
-     * AD_COPY resolves through the COPY route (same model family) but the
-     * returned route keeps purpose = AD_COPY so llm_call stats separate.
+     * AD_COPY and VIDEO_SCRIPT resolve through the COPY route (same model
+     * family) but the returned route keeps the original purpose so llm_call
+     * stats separate.
      */
     public ResolvedRoute resolve(long tenantId, LlmPurpose purpose) {
-        LlmPurpose lookup = purpose == LlmPurpose.AD_COPY ? LlmPurpose.COPY : purpose;
+        LlmPurpose lookup = switch (purpose) {
+            case AD_COPY, VIDEO_SCRIPT -> LlmPurpose.COPY;
+            default -> purpose;
+        };
         List<ResolvedRoute> rows = jdbc.query("""
                 select r.provider_id, r.model, r.supports_images, r.input_per_mtok,
                        r.output_per_mtok, r.cache_read_per_mtok, r.updated_at as route_updated,

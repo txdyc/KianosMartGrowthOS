@@ -120,6 +120,62 @@ public class TextPrecheck {
         return new PrecheckResult(List.copyOf(flags), metrics);
     }
 
+    /**
+     * Precheck for one video type's script: the shared fact/claim/price rules
+     * plus 3-4 captions capped at 42 characters and a hook capped at 40; the
+     * too-long / wrong-count flag records which field overflowed in
+     * metrics.field.
+     */
+    public PrecheckResult checkVideoScript(com.kiano.content.video.VideoScriptText text,
+            FactsJson facts) {
+        List<PrecheckFlag> flags = new ArrayList<>();
+        Map<String, Object> metrics = new LinkedHashMap<>();
+        String plain = TAG.matcher((text.hook() == null ? "" : text.hook()) + " "
+                + String.join(" ", text.captions() == null ? List.of() : text.captions()))
+                .replaceAll(" ");
+        Set<QuantityNormalizer.Quantity> copyQuantities = QuantityNormalizer.extract(plain);
+        Set<QuantityNormalizer.Quantity> factQuantities = factQuantities(facts);
+        List<String> unmatched = copyQuantities.stream()
+                .filter(q -> !factQuantities.contains(q))
+                .map(q -> q.value().toPlainString() + " " + q.unit())
+                .toList();
+        if (!unmatched.isEmpty()) {
+            flags.add(PrecheckFlag.FACT_MISMATCH);
+            metrics.put("unmatched", unmatched);
+        }
+        for (String claim : forbiddenClaims(facts)) {
+            if (containsWord(plain, claim)) {
+                flags.add(PrecheckFlag.FORBIDDEN_CLAIM);
+                break;
+            }
+        }
+        if (CURRENCY.matcher(plain).find()) {
+            flags.add(PrecheckFlag.PRICE_IN_COPY);
+        }
+        String field = null;
+        if (text.hook() != null && text.hook().length() > 40) {
+            field = "hook";
+        } else if (text.captions() != null) {
+            for (String caption : text.captions()) {
+                if (caption != null && caption.length() > 42) {
+                    field = "captions";
+                    break;
+                }
+            }
+        }
+        if (field != null) {
+            flags.add(PrecheckFlag.TOO_LONG);
+            metrics.put("field", field);
+        }
+        int captionCount = text.captions() == null ? 0 : text.captions().size();
+        if (captionCount < 3 || captionCount > 4) {
+            flags.add(PrecheckFlag.CAPTION_COUNT);
+            metrics.put("field", "captions");
+            metrics.put("captionCount", captionCount);
+        }
+        return new PrecheckResult(List.copyOf(flags), metrics);
+    }
+
     private List<String> forbiddenClaims(FactsJson facts) {
         List<String> claims = new ArrayList<>(props.getForbiddenClaims());
         if (facts.forbiddenClaims() != null) {

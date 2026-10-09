@@ -18,6 +18,9 @@ import com.kiano.content.generation.GenerationJobStore;
 import com.kiano.content.generation.GenerationRunStore;
 import com.kiano.content.media.SourceMediaEntity;
 import com.kiano.content.media.SourceMediaMapper;
+import com.kiano.content.video.VideoScriptTaskHandler;
+import com.kiano.content.video.VideoScriptText;
+import com.kiano.content.video.VideoType;
 import com.kiano.content.workflow.WorkflowRegistry;
 import com.kiano.content.workflow.WorkflowRegistry.ComfyWorkflowView;
 import com.kiano.platform.audit.ActorType;
@@ -265,6 +268,7 @@ public class ReviewService {
         }
         boolean htmlSpec = List.of("COPY_LONG", "COPY_SHORT").contains(asset.getSpecCode());
         boolean adCopy = "AD_COPY".equals(asset.getSpecCode());
+        boolean videoScript = "VIDEO_SCRIPT".equals(asset.getSpecCode());
         if (htmlSpec && !Jsoup.isValid(textBody, HTML_SAFELIST)) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "TEXT_HTML_NOT_ALLOWED",
                     "Only p, ul, li, table, tr, th, td, h2, h3, strong, em and the policy "
@@ -277,6 +281,28 @@ public class ReviewService {
             } catch (IllegalArgumentException ex) {
                 throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "AD_COPY_INVALID",
                         "Ad copy must be a JSON object with overlay, headline and primaryText");
+            }
+        } else if (videoScript) {
+            // the body must stay a parseable video script JSON object without markup
+            VideoScriptText script;
+            try {
+                script = VideoScriptText.fromJson(textBody);
+            } catch (IllegalArgumentException ex) {
+                throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "VIDEO_SCRIPT_INVALID",
+                        "Video script must be a JSON object with hook and captions");
+            }
+            boolean markup = PlainText.hasMarkup(script.hook());
+            if (!markup) {
+                for (String caption : script.captions()) {
+                    if (PlainText.hasMarkup(caption)) {
+                        markup = true;
+                        break;
+                    }
+                }
+            }
+            if (markup) {
+                throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "TEXT_HTML_NOT_ALLOWED",
+                        "VIDEO_SCRIPT fields are plain text; HTML tags are not allowed");
             }
         } else if (!htmlSpec && PlainText.hasMarkup(textBody)) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "TEXT_HTML_NOT_ALLOWED",
@@ -327,11 +353,24 @@ public class ReviewService {
                         "Ad copy must be a JSON object with overlay, headline and primaryText");
             }
         }
+        if ("VIDEO_SCRIPT".equals(asset.getSpecCode())) {
+            try {
+                return textPrecheck.checkVideoScript(VideoScriptText.fromJson(textBody),
+                        locked.facts());
+            } catch (IllegalArgumentException ex) {
+                throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "VIDEO_SCRIPT_INVALID",
+                        "Video script must be a JSON object with hook and captions");
+            }
+        }
         return textPrecheck.check(asset.getSpecCode(), textBody, locked.facts());
     }
 
     /** Recreates the job that produced the asset under a fresh run. */
     private @Nullable Long regenerate(CurrentUser user, AssetEntity asset) {
+        if ("VIDEO_SCRIPT".equals(asset.getSpecCode())) {
+            enqueueVideoScriptRegenerate(asset);
+            return null;
+        }
         if ("AD_COPY".equals(asset.getSpecCode())) {
             enqueueAdCopyRegenerate(asset);
             return null;
@@ -356,6 +395,33 @@ public class ReviewService {
                     "Assets of spec " + asset.getSpecCode() + " cannot be regenerated yet");
         }
         return runId;
+    }
+
+    /**
+     * A VIDEO_SCRIPT regenerates by re-running the LLM for that type only; the
+     * variant is the lowercase wire() of the VideoType.
+     */
+    private void enqueueVideoScriptRegenerate(AssetEntity asset) {
+        Integer factVersion = asset.getFactVersion();
+        if (factVersion == null) {
+            throw new ApiException(HttpStatus.CONFLICT, "REGENERATE_NOT_POSSIBLE",
+                    "Video script has no fact version to regenerate against");
+        }
+        try {
+            VideoType.fromWire(asset.getVariant());
+        } catch (IllegalArgumentException ex) {
+            throw new ApiException(HttpStatus.CONFLICT, "REGENERATE_NOT_POSSIBLE",
+                    "Unknown video type variant " + asset.getVariant());
+        }
+        Optional<Long> taskId = queue.enqueue(asset.getTenantId(), VideoScriptTaskHandler.TYPE,
+                Map.of("productId", asset.getProductId(), "factVersion", factVersion,
+                        "onlyType", asset.getVariant()),
+                "video-script:" + asset.getProductId() + ":" + factVersion + ":regen"
+                        + ":" + asset.getVariant());
+        if (taskId.isEmpty()) {
+            throw new ApiException(HttpStatus.CONFLICT, "REGENERATE_IN_PROGRESS",
+                    "A video script regeneration for this type is already queued or running");
+        }
     }
 
     /** AD_COPY regenerates by re-running the LLM for that hook only. */
