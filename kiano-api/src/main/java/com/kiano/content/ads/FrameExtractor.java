@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import javax.imageio.ImageIO;
 import org.springframework.http.HttpStatus;
@@ -44,13 +45,13 @@ public class FrameExtractor {
         List<Frame> frames = new ArrayList<>();
         for (int i = 0; i < FRACTIONS.length; i++) {
             double time = durationSeconds * FRACTIONS[i];
-            byte[] jpeg = extract(video, time);
-            if (jpeg == null) {
+            Optional<byte[]> jpeg = frameAt(video, time);
+            if (jpeg.isEmpty()) {
                 continue;
             }
-            BufferedImage image = decode(jpeg);
+            BufferedImage image = decode(jpeg.get());
             if (image != null) {
-                frames.add(new Frame(i, time, PhotoQc.blurVariance(image), jpeg));
+                frames.add(new Frame(i, time, PhotoQc.blurVariance(image), jpeg.get()));
             }
         }
         if (frames.isEmpty()) {
@@ -59,6 +60,16 @@ public class FrameExtractor {
         }
         frames.sort(Comparator.comparingDouble(Frame::blurVariance).reversed());
         return frames;
+    }
+
+    /**
+     * One JPEG frame at {@code time}; empty when ffmpeg cannot start, fails,
+     * writes nothing or exceeds {@code kiano.media.ffmpeg-timeout} (then it is
+     * killed). Used by {@link com.kiano.content.video.ClipWindowPicker} to score
+     * real-footage windows.
+     */
+    public Optional<byte[]> frameAt(Path video, double time) {
+        return Optional.ofNullable(extract(video, time));
     }
 
     /**
