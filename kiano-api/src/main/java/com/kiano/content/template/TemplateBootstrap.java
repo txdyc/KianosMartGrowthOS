@@ -39,7 +39,9 @@ public class TemplateBootstrap implements ApplicationRunner {
             new Baseline("AD_PROBLEM", "AD_OVERLAY"),
             new Baseline("AD_DEMO", "AD_OVERLAY"),
             new Baseline("AD_TRUST", "AD_OVERLAY"),
-            new Baseline("VIDEO_SCRIPT_PROMPT", "COPY_PROMPT"));
+            new Baseline("VIDEO_SCRIPT_PROMPT", "COPY_PROMPT"),
+            new Baseline("VIDEO_CAPTION", "VIDEO_OVERLAY"),
+            new Baseline("END_CARD", "END_CARD"));
 
     private final JdbcTemplate jdbcTemplate;
     private final TemplateRegistry registry;

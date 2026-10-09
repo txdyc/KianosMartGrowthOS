@@ -46,6 +46,18 @@ public class TemplateRenderer {
         }
     }
 
+    /**
+     * Renders with a transparent background (C5): the template's body must be
+     * transparent, and the screenshot omits the default white backdrop so the
+     * caption/overlay PNGs can be composited over video with ffmpeg.
+     */
+    public byte[] renderTransparent(long tenantId, String code, Map<String, Object> model,
+            int width, int height) {
+        try (Page page = openPage(tenantId, code, model, width, height)) {
+            return page.screenshot(new Page.ScreenshotOptions().setOmitBackground(true));
+        }
+    }
+
     /** document.body.scrollWidth after rendering, for layout tests. */
     public int bodyScrollWidth(long tenantId, String code, Map<String, Object> model,
             int width, int height) {

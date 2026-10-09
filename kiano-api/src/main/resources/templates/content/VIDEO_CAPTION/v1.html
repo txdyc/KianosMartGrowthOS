@@ -1,0 +1,16 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Noto Sans', sans-serif; background:transparent; }
+  .frame { position:relative; width:1080px; height:1920px; --fs:{{fontScale}}; }
+  .ad-text { font-family:'Noto Sans', sans-serif; color:#fff; }
+  .cap { position:absolute; left:60px; right:60px; text-align:center; font-weight:700;
+         background:rgba(0,0,0,.45); border-radius:26px; padding:20px 30px;
+         box-shadow:0 4px 16px rgba(0,0,0,.25); }
+  .cap.hook { top:290px; font-size:calc(52px*var(--fs)); }
+  .cap.body { bottom:700px; font-size:calc(44px*var(--fs)); }
+</style></head><body>
+  <div class="frame">
+    <div class="ad-text cap {{position}}">{{text}}</div>
+  </div>
+</body></html>

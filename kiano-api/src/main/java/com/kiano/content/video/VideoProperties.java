@@ -47,6 +47,9 @@ public class VideoProperties {
     private double musicVolume = 0.35;
     private double musicFadeOut = 1.5;
 
+    /** WhatsApp number shown on the end card; empty hides it. */
+    private String whatsappDisplay = "";
+
     /** Mood preferred by the music picker per video type (wire() → mood). */
     private Map<String, String> mood = Map.of(
             "demo", "upbeat",
@@ -156,6 +159,14 @@ public class VideoProperties {
 
     public void setMusicFadeOut(double musicFadeOut) {
         this.musicFadeOut = musicFadeOut;
+    }
+
+    public String getWhatsappDisplay() {
+        return whatsappDisplay;
+    }
+
+    public void setWhatsappDisplay(String whatsappDisplay) {
+        this.whatsappDisplay = whatsappDisplay;
     }
 
     public Map<String, String> getMood() {

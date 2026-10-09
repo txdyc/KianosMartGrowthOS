@@ -99,6 +99,7 @@ kiano:
       original-volume: 0.5
       music-volume: 0.35
       music-fade-out: 1.5
+      whatsapp-display: ""
       mood:
         demo: upbeat
         problem: uplifting

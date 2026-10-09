@@ -1,0 +1,31 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Noto Sans', sans-serif; }
+  .canvas { position:relative; overflow:hidden; width:1080px; height:1920px; background:linear-gradient(180deg,#0e2a47 0%,#16446f 55%,#0e2a47 100%); }
+  .product { position:absolute; top:140px; left:0; right:0; margin:0 auto; max-width:760px; max-height:640px; object-fit:contain; filter:drop-shadow(0 18px 30px rgba(0,0,0,.45)); }
+  .name { position:absolute; left:0; right:0; top:850px; text-align:center; font-weight:700; font-size:44px; color:#fff; padding:0 60px; }
+  .price-row { position:absolute; left:0; right:0; top:980px; text-align:center; }
+  .strike { text-decoration:line-through; opacity:.8; font-size:36px; color:#fff; margin-right:18px; }
+  .price { font-weight:700; font-size:92px; color:#ffd54a; }
+  .ends { display:block; margin-top:6px; font-size:30px; color:#ffe9b0; }
+  .badges { position:absolute; left:0; right:0; top:1240px; text-align:center; }
+  .badge { display:inline-block; margin:0 10px; padding:10px 26px; border-radius:40px; background:rgba(255,255,255,.16); color:#fff; font-weight:700; font-size:30px; }
+  .cta { position:absolute; left:90px; right:90px; bottom:220px; text-align:center; padding:26px 0; border-radius:20px; background:#25d366; color:#fff; font-weight:700; font-size:40px; }
+  .whatsapp { position:absolute; left:0; right:0; bottom:130px; text-align:center; font-size:30px; color:#e8f5e9; }
+</style></head><body>
+  <div class="canvas">
+    {{#productImage}}<img class="product" src="{{productImage}}" alt="">{{/productImage}}
+    <div class="name">{{productName}}</div>
+    <div class="price-row">
+      {{#strike}}<span class="strike">{{strike}}</span>{{/strike}}
+      <span class="price">{{current}}</span>
+      {{#endsLabel}}<span class="ends">{{endsLabel}}</span>{{/endsLabel}}
+    </div>
+    <div class="badges">
+      {{#badges}}<span class="badge">{{text}}</span>{{/badges}}
+    </div>
+    <div class="cta">{{cta}}</div>
+    {{#whatsapp}}<div class="whatsapp">{{whatsapp}}</div>{{/whatsapp}}
+  </div>
+</body></html>
