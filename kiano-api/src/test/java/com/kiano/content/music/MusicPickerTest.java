@@ -35,8 +35,17 @@ class MusicPickerTest {
 
     @BeforeEach
     void seed() {
+        // clear rows other test classes left behind, in FK-safe order
         jdbcTemplate.update("delete from music_track");
+        jdbcTemplate.update("delete from generation_job");
+        jdbcTemplate.update("delete from generation_run");
+        jdbcTemplate.update("delete from content_batch_item");
+        jdbcTemplate.update("delete from content_batch");
+        jdbcTemplate.update("delete from asset_review");
         jdbcTemplate.update("delete from asset");
+        jdbcTemplate.update("delete from source_media");
+        jdbcTemplate.update("delete from product_fact_sheet");
+        jdbcTemplate.update("delete from publication");
         jdbcTemplate.update("delete from product_profile");
         jdbcTemplate.update("delete from product_category");
         jdbcTemplate.update("delete from product");
@@ -53,6 +62,12 @@ class MusicPickerTest {
                         + "values (?, ?, -8200, 'simple', 'MG-KTL17', 'Kettle 1.7L', 'publish', now()) "
                         + "returning id",
                 Long.class, tenantId, storeId);
+    }
+
+    /** Music rows reference users: leave none behind for the next test class. */
+    @AfterEach
+    void cleanUp() {
+        jdbcTemplate.update("delete from music_track");
     }
 
     private long track(String title, String moods, String status) {

@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIf;
@@ -52,9 +53,19 @@ class MusicTrackServiceTest {
 
     @BeforeEach
     void seed() {
+        // clear rows other test classes left behind, in FK-safe order
         jdbcTemplate.update("delete from music_track");
         jdbcTemplate.update("delete from audit_log");
+        jdbcTemplate.update("delete from asset_review");
         jdbcTemplate.update("delete from asset");
+        jdbcTemplate.update("delete from source_media");
+        jdbcTemplate.update("delete from product_fact_sheet");
+        jdbcTemplate.update("delete from publication");
+        jdbcTemplate.update("delete from generation_job");
+        jdbcTemplate.update("delete from generation_run");
+        jdbcTemplate.update("delete from content_batch_item");
+        jdbcTemplate.update("delete from content_batch");
+        jdbcTemplate.update("delete from comfy_workflow");
         jdbcTemplate.update("delete from product_profile");
         jdbcTemplate.update("delete from product_category");
         jdbcTemplate.update("delete from product");
@@ -82,6 +93,12 @@ class MusicTrackServiceTest {
                         + "values (?, 'music-op@example.test', 'Op', ?, 'OPERATOR') returning id",
                 Long.class, tenantId, passwordEncoder.encode("op-pass-123"));
         operator = new CurrentUser(operatorId, tenantId, Role.OPERATOR, "music-op@example.test");
+    }
+
+    /** Music rows reference users: leave none behind for the next test class. */
+    @AfterEach
+    void cleanUp() {
+        jdbcTemplate.update("delete from music_track");
     }
 
     private static MusicTrackService.MusicMeta meta(String licenseType, String licenseProof) {

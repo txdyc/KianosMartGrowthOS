@@ -52,7 +52,25 @@ class MusicControllerTest {
 
     @BeforeEach
     void seed() throws Exception {
+        // the shared test database holds rows from other test classes: clear
+        // the referencing children in FK-safe order first
         jdbcTemplate.update("delete from music_track");
+        jdbcTemplate.update("delete from asset_review");
+        jdbcTemplate.update("delete from asset");
+        jdbcTemplate.update("delete from source_media");
+        jdbcTemplate.update("delete from product_fact_sheet");
+        jdbcTemplate.update("delete from publication");
+        jdbcTemplate.update("delete from generation_job");
+        jdbcTemplate.update("delete from generation_run");
+        jdbcTemplate.update("delete from content_batch_item");
+        jdbcTemplate.update("delete from content_batch");
+        jdbcTemplate.update("delete from comfy_workflow");
+        jdbcTemplate.update("delete from product_profile");
+        jdbcTemplate.update("delete from product_category");
+        jdbcTemplate.update("delete from product");
+        jdbcTemplate.update("delete from category");
+        jdbcTemplate.update("delete from store_policy");
+        jdbcTemplate.update("delete from store where platform = 'WOOCOMMERCE'");
         jdbcTemplate.update("delete from app_user");
         tenantId = jdbcTemplate.queryForObject("select id from tenant where slug = 'kianosmart'",
                 Long.class);
@@ -64,6 +82,12 @@ class MusicControllerTest {
                 "insert into app_user (tenant_id, email, name, password_hash, role) "
                         + "values (?, ?, 'User', ?, ?)",
                 tenantId, OPERATOR_EMAIL, passwordEncoder.encode(OPERATOR_PASSWORD), "OPERATOR");
+    }
+
+    /** Music rows reference users: leave none behind for the next test class. */
+    @AfterEach
+    void cleanUp() {
+        jdbcTemplate.update("delete from music_track");
     }
 
     @Test

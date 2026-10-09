@@ -79,6 +79,11 @@ class VideoOverlayRendererTest {
         jdbcTemplate.update("delete from asset");
         jdbcTemplate.update("delete from source_media");
         jdbcTemplate.update("delete from product_fact_sheet");
+        jdbcTemplate.update("delete from publication");
+        jdbcTemplate.update("delete from generation_job");
+        jdbcTemplate.update("delete from generation_run");
+        jdbcTemplate.update("delete from content_batch_item");
+        jdbcTemplate.update("delete from content_batch");
         jdbcTemplate.update("delete from product_profile");
         jdbcTemplate.update("delete from llm_call");
         jdbcTemplate.update("delete from product_category");
