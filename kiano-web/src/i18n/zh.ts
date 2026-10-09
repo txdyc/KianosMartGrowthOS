@@ -14,6 +14,7 @@ export const zh: Record<MessageKey, string> = {
   "nav.facts": "事实表",
   "nav.policy": "店铺政策",
   "nav.aiModels": "AI 模型",
+  "nav.music": "曲库",
   "nav.ads": "广告",
   "nav.logout": "退出登录",
 
@@ -394,6 +395,47 @@ export const zh: Record<MessageKey, string> = {
   "ads.field.headline": "主标题",
   "ads.field.primaryText": "正文",
 
+  // 曲库（C5）
+  "music.title": "曲库",
+  "music.guide":
+    "短视频的配乐都来自这里。每首曲目都记录许可证；需要署名的许可（如 CC-BY）不能用于广告。",
+  "music.tracks": "曲目",
+  "music.empty": "还没有曲目。",
+  "music.upload": "上传曲目",
+  "music.titleField": "标题",
+  "music.artist": "作者（可选）",
+  "music.duration": "时长",
+  "music.moods": "情绪",
+  "music.licenseType": "许可证类型",
+  "music.licenseSource": "许可证来源",
+  "music.licenseProof": "许可证证明（链接或说明）",
+  "music.usedCount": "使用次数",
+  "music.status.ACTIVE": "启用",
+  "music.status.RETIRED": "已停用",
+  "music.preview": "试听",
+  "music.retire": "停用",
+  "music.retireConfirm":
+    "停用这首曲目？已使用它的视频保留 provenance，但新视频不会再选到它。",
+  "music.file": "音频文件",
+  "music.fileHint": "mp3、m4a 或 wav · 不超过 20 MB · 10–300 秒（上传时校验）。",
+  "music.licenseNotice": "需要署名的许可（如 CC-BY）不能上传：广告中无法署名。",
+  "music.uploaded": "曲目已添加。",
+  "music.onlyOwner": "只有所有者可以上传或停用曲目。",
+  "music.license.CC0": "CC0",
+  "music.license.ROYALTY_FREE_COMMERCIAL": "免版税（可商用）",
+  "music.license.OWNED": "自有版权",
+  "music.mood.upbeat": "明快",
+  "music.mood.uplifting": "上扬",
+  "music.mood.calm": "舒缓",
+  "music.mood.energetic": "活力",
+  "music.error.titleRequired": "请填写标题。",
+  "music.error.licenseTypeRequired": "请选择许可证类型。",
+  "music.error.sourceRequired": "请填写曲目来源（例如 Pixabay）。",
+  "music.error.proofRequired": "请填写许可证证明（链接或说明）。",
+  "music.error.fileRequired": "请选择音频文件。",
+  "music.error.fileExtension": "只接受 mp3、m4a 和 wav 文件。",
+  "music.error.fileSize": "音频文件不能超过 20 MB。",
+
   // generic
   "loading": "加载中…",
 
@@ -468,4 +510,7 @@ export const zh: Record<MessageKey, string> = {
   "error.AD_COPY_MISSING": "请先生成每个 hook 的广告文案。",
   "error.TEMPLATE_NOT_FOUND": "该广告没有可用的已通过模板。",
   "error.AD_COPY_INVALID": "广告文案无效，请检查三个字段。",
+
+  // C5 曲库错误
+  "error.DUPLICATE_TRACK": "这首音频已经在曲库中了。",
 };

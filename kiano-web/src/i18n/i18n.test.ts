@@ -89,7 +89,11 @@ test("dictionary covers every backend enum and error code", () => {
     "LLM_TEST_FAILED",
     "LLM_PROVIDER_KIND_IMMUTABLE",
     "LLM_TRUNCATED",
+    "DUPLICATE_TRACK",
   ];
+  const licenseTypes = ["CC0", "ROYALTY_FREE_COMMERCIAL", "OWNED"];
+  const musicMoods = ["upbeat", "uplifting", "calm", "energetic"];
+  const musicStatuses = ["ACTIVE", "RETIRED"];
 
   const required: MessageKey[] = [
     ...qcReasons.map((r) => `qc.${r}` as MessageKey),
@@ -104,6 +108,9 @@ test("dictionary covers every backend enum and error code", () => {
     ...precheckFlags.map((f) => `precheck.${f}` as MessageKey),
     ...rejectReasons.map((r) => `reject.${r}` as MessageKey),
     ...errorCodes.map((c) => `error.${c}` as MessageKey),
+    ...licenseTypes.map((l) => `music.license.${l}` as MessageKey),
+    ...musicMoods.map((m) => `music.mood.${m}` as MessageKey),
+    ...musicStatuses.map((s) => `music.status.${s}` as MessageKey),
     "error.UNSUPPORTED_FILE_TYPE.heic",
   ];
 

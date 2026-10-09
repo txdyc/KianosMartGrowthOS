@@ -12,6 +12,7 @@ export const en = {
   "nav.facts": "Facts",
   "nav.policy": "Store policy",
   "nav.aiModels": "AI models",
+  "nav.music": "Music",
   "nav.ads": "Ads",
   "nav.logout": "Logout",
 
@@ -392,6 +393,48 @@ export const en = {
   "ads.field.headline": "Headline",
   "ads.field.primaryText": "Primary text",
 
+  // music library (C5)
+  "music.title": "Music library",
+  "music.guide":
+    "Licensed tracks used as background music in short videos. Every track carries its licence; tracks that need attribution (e.g. CC-BY) cannot be used in ads.",
+  "music.tracks": "Tracks",
+  "music.empty": "No tracks yet.",
+  "music.upload": "Upload track",
+  "music.titleField": "Title",
+  "music.artist": "Artist (optional)",
+  "music.duration": "Duration",
+  "music.moods": "Moods",
+  "music.licenseType": "Licence type",
+  "music.licenseSource": "Licence source",
+  "music.licenseProof": "Licence proof (link or note)",
+  "music.usedCount": "Used",
+  "music.status.ACTIVE": "Active",
+  "music.status.RETIRED": "Retired",
+  "music.preview": "Preview",
+  "music.retire": "Retire",
+  "music.retireConfirm":
+    "Retire this track? Videos that already use it keep their provenance, but new videos will not pick it again.",
+  "music.file": "Audio file",
+  "music.fileHint": "mp3, m4a or wav · at most 20 MB · 10–300 seconds (checked on upload).",
+  "music.licenseNotice":
+    "Tracks that require attribution (e.g. CC-BY) cannot be uploaded: ads cannot carry a credit line.",
+  "music.uploaded": "Track added.",
+  "music.onlyOwner": "Only the owner can upload or retire tracks.",
+  "music.license.CC0": "CC0",
+  "music.license.ROYALTY_FREE_COMMERCIAL": "Royalty-free (commercial)",
+  "music.license.OWNED": "Owned",
+  "music.mood.upbeat": "Upbeat",
+  "music.mood.uplifting": "Uplifting",
+  "music.mood.calm": "Calm",
+  "music.mood.energetic": "Energetic",
+  "music.error.titleRequired": "Enter a title.",
+  "music.error.licenseTypeRequired": "Pick a licence type.",
+  "music.error.sourceRequired": "Enter where the track comes from (e.g. Pixabay).",
+  "music.error.proofRequired": "Enter the licence proof (a link or a description).",
+  "music.error.fileRequired": "Pick an audio file.",
+  "music.error.fileExtension": "Only mp3, m4a and wav files are accepted.",
+  "music.error.fileSize": "Music files must be 20 MB or smaller.",
+
   // generic
   "loading": "Loading…",
 
@@ -467,6 +510,9 @@ export const en = {
   "error.AD_COPY_MISSING": "Generate ad copy for every hook first.",
   "error.TEMPLATE_NOT_FOUND": "No approved template is available for this ad.",
   "error.AD_COPY_INVALID": "The ad copy is invalid; check the three fields.",
+
+  // C5 music errors
+  "error.DUPLICATE_TRACK": "This audio file is already in the library.",
 } as const;
 
 export type MessageKey = keyof typeof en;

@@ -239,6 +239,24 @@ export interface AdReplacement {
   newFileName: string;
   newAssetId: number;
   newStatus: AssetStatus;
+  specCode: string;
+}
+
+/** Lifecycle of a library track (GET /api/v1/content/music). */
+export type MusicStatus = "ACTIVE" | "RETIRED";
+
+/** One row of GET /api/v1/content/music (content.music.MusicTrackView). */
+export interface MusicTrackView {
+  id: number;
+  title: string;
+  artist: string | null;
+  durationSeconds: number;
+  moods: string[];
+  licenseType: string;
+  licenseSource: string;
+  licenseProof: string;
+  status: MusicStatus;
+  usedCount: number;
 }
 
 /**

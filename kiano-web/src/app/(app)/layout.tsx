@@ -17,7 +17,8 @@ type NavHref =
   | "/ads"
   | "/settings/integrations"
   | "/settings/policy"
-  | "/settings/llm";
+  | "/settings/llm"
+  | "/settings/music";
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const { t } = useI18n();
@@ -53,6 +54,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     links.push({ href: "/settings/integrations", label: t("nav.settings") });
     links.push({ href: "/settings/policy", label: t("nav.policy") });
     links.push({ href: "/settings/llm", label: t("nav.aiModels") });
+    links.push({ href: "/settings/music", label: t("nav.music") });
   }
 
   // needs-republish badge goes right after the products link.
