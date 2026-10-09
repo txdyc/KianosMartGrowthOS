@@ -87,3 +87,8 @@ kiano:
       max-gshop: 150
       max-seo-title: 60
       max-seo-description: 155
+    video:
+      mood:
+        demo: upbeat
+        problem: uplifting
+        unboxing: upbeat
