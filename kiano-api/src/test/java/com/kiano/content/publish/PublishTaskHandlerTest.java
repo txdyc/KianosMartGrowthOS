@@ -140,7 +140,7 @@ class PublishTaskHandlerTest {
             String textBody) {
         return new ReviewItem(id, 21L, "MG-BL200", "Morgan Blender", spec, variant, 1,
                 "APPROVED", kind, List.of(), Map.of(), null, null, null, null, null, textBody,
-                null, 1, null, null, null, null, null, null, null);
+                null, 1, null, null, null, null, null, null, null, null, null);
     }
 
     private TaskContext ctx() {
