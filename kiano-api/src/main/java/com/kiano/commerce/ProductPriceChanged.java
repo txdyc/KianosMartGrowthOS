@@ -6,7 +6,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Published (inside the sync transaction) whenever an existing product's
- * regular/sale price or promotion end date changed. C4 consumes it with a
+ * regular/sale/current price or promotion window changed. C4 consumes it with a
  * {@code @TransactionalEventListener} to re-check affected content.
  */
 public record ProductPriceChanged(long tenantId, long productId, String sku,

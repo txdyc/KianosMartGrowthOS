@@ -145,6 +145,46 @@ class ProductSyncServiceTest {
     }
 
     @Test
+    void scheduledSaleStarts_onlyCurrentPriceChanges_firesPriceChanged() {
+        // sale scheduled ahead of time: regular/sale/dates already set, price still regular
+        Instant from = Instant.parse("2026-10-22T00:00:00Z");
+        Instant to = Instant.parse("2026-10-30T23:59:59Z");
+        seedCatalog();
+        replaceProduct(withSaleWindow(product(201, "simple", "MG-BL200", "Bladeless Fan",
+                new BigDecimal("299"), new BigDecimal("249"), new BigDecimal("299"),
+                List.of(11L), "publish"), from, to));
+        syncService.syncAll(tenantId);
+        applicationEvents.clear();
+
+        // the sale starts: Woo flips only the current price
+        replaceProduct(withSaleWindow(product(201, "simple", "MG-BL200", "Bladeless Fan",
+                new BigDecimal("299"), new BigDecimal("249"), new BigDecimal("249"),
+                List.of(11L), "publish"), from, to));
+        SyncResult result = syncService.syncAll(tenantId);
+
+        assertThat(result.priceChanges()).isEqualTo(1);
+        assertThat(applicationEvents.stream(ProductPriceChanged.class)).hasSize(1);
+    }
+
+    @Test
+    void saleStartDateChange_firesPriceChanged() {
+        Instant to = Instant.parse("2026-10-30T23:59:59Z");
+        seedCatalog();
+        replaceProduct(withSaleWindow(port.products.stream()
+                .filter(p -> p.externalId() == 201).findFirst().orElseThrow(),
+                Instant.parse("2026-10-22T00:00:00Z"), to));
+        syncService.syncAll(tenantId);
+        applicationEvents.clear();
+
+        replaceProduct(withSaleWindow(port.products.stream()
+                .filter(p -> p.externalId() == 201).findFirst().orElseThrow(),
+                Instant.parse("2026-10-25T00:00:00Z"), to));
+        SyncResult result = syncService.syncAll(tenantId);
+
+        assertThat(result.priceChanges()).isEqualTo(1);
+    }
+
+    @Test
     void unchangedSaleDates_noEvent() {
         seedCatalog();
         Instant end = Instant.parse("2026-10-20T23:59:59Z");
@@ -286,6 +326,14 @@ class ProductSyncServiceTest {
         return new CommerceProduct(externalId, parentExternalId, "variation", sku, "MorganGo",
                 name, null, regular, sale, sale, 5, "instock", "publish", null, null,
                 Instant.parse("2026-10-01T00:00:00Z"), List.of(), null, null);
+    }
+
+    private static CommerceProduct withSaleWindow(CommerceProduct p, Instant saleFromAt,
+            Instant saleToAt) {
+        return new CommerceProduct(p.externalId(), p.parentExternalId(), p.type(), p.sku(),
+                p.brand(), p.name(), p.slug(), p.regularPrice(), p.salePrice(), p.price(),
+                p.stockQty(), p.stockStatus(), p.status(), p.permalink(), p.imageUrl(),
+                p.modifiedAt(), p.categoryExternalIds(), saleFromAt, saleToAt);
     }
 
     private static CommerceProduct withSaleTo(CommerceProduct p, Instant saleToAt) {

@@ -142,13 +142,13 @@ public class ProductSyncService {
     private Map<Long, ExistingProduct> loadExisting(long tenantId) {
         Map<Long, ExistingProduct> existing = new HashMap<>();
         jdbcTemplate.query(
-                "select external_id, regular_price, sale_price, sale_to_at "
+                "select external_id, regular_price, sale_price, price, sale_from_at, sale_to_at "
                         + "from product where tenant_id = ?",
                 rs -> {
                     existing.put(rs.getLong("external_id"), new ExistingProduct(
                             rs.getBigDecimal("regular_price"), rs.getBigDecimal("sale_price"),
-                            rs.getTimestamp("sale_to_at") == null ? null
-                                    : rs.getTimestamp("sale_to_at").toInstant()));
+                            rs.getBigDecimal("price"), instant(rs.getTimestamp("sale_from_at")),
+                            instant(rs.getTimestamp("sale_to_at"))));
                 },
                 tenantId);
         return existing;
@@ -204,9 +204,17 @@ public class ProductSyncService {
     }
 
     private static boolean priceChanged(ExistingProduct existing, CommerceProduct incoming) {
+        // price is the amount Woo charges now: it flips on its own when a scheduled
+        // sale starts or ends, with regular/sale/dates unchanged
         return !moneyEquals(existing.regularPrice(), incoming.regularPrice())
                 || !moneyEquals(existing.salePrice(), incoming.salePrice())
+                || !moneyEquals(existing.price(), incoming.price())
+                || !instantEquals(existing.saleFromAt(), incoming.saleFromAt())
                 || !instantEquals(existing.saleToAt(), incoming.saleToAt());
+    }
+
+    private static Instant instant(java.sql.Timestamp timestamp) {
+        return timestamp == null ? null : timestamp.toInstant();
     }
 
     private static boolean moneyEquals(BigDecimal a, BigDecimal b) {
@@ -228,10 +236,14 @@ public class ProductSyncService {
         Map<String, Object> before = new LinkedHashMap<>();
         before.put("regularPrice", existing.regularPrice());
         before.put("salePrice", existing.salePrice());
+        before.put("price", existing.price());
+        before.put("saleFromAt", existing.saleFromAt());
         before.put("saleToAt", existing.saleToAt());
         Map<String, Object> after = new LinkedHashMap<>();
         after.put("regularPrice", product.regularPrice());
         after.put("salePrice", product.salePrice());
+        after.put("price", product.price());
+        after.put("saleFromAt", product.saleFromAt());
         after.put("saleToAt", product.saleToAt());
         auditLog.record(new AuditEntry(tenantId, ActorType.SYSTEM, "SYSTEM",
                 "PRODUCT_PRICE_CHANGED", "product", String.valueOf(productId), before, after,
@@ -257,10 +269,10 @@ public class ProductSyncService {
     }
 
     /**
-     * Prices and promotion end of an already-stored product row, for change
+     * Prices and promotion window of an already-stored product row, for change
      * detection.
      */
-    private record ExistingProduct(BigDecimal regularPrice, BigDecimal salePrice,
-            Instant saleToAt) {
+    private record ExistingProduct(BigDecimal regularPrice, BigDecimal salePrice, BigDecimal price,
+            Instant saleFromAt, Instant saleToAt) {
     }
 }
