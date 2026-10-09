@@ -90,10 +90,32 @@ test("dictionary covers every backend enum and error code", () => {
     "LLM_PROVIDER_KIND_IMMUTABLE",
     "LLM_TRUNCATED",
     "DUPLICATE_TRACK",
+    "VIDEO_PRECONDITIONS",
+    "VIDEO_SOURCE_TOO_SHORT",
+    "AI_RATIO_EXCEEDED",
+    "SEGMENT_OUT_OF_SOURCE",
+    "TOTAL_OUT_OF_RANGE",
+    "BODY_OUT_OF_RANGE",
+    "OVERLAY_OUT_OF_TIMELINE",
+    "ASSET_NOT_EDITABLE",
+    "MUSIC_LIBRARY_EMPTY",
   ];
   const licenseTypes = ["CC0", "ROYALTY_FREE_COMMERCIAL", "OWNED"];
   const musicMoods = ["upbeat", "uplifting", "calm", "energetic"];
   const musicStatuses = ["ACTIVE", "RETIRED"];
+  const videoTypes = ["demo", "problem", "unboxing"];
+  const videoRoles = ["hook", "body", "captions", "endcard"];
+  const h3Backends = ["LOCAL", "API"];
+  const h3Outcomes = ["SUCCEEDED", "TIMEOUT", "FAILED"];
+  const h3Reasons = [
+    "H3_NO_BACKEND",
+    "H3_LOCAL_TIMEOUT",
+    "H3_LOCAL_FAILED",
+    "H3_TIMEOUT",
+    "H3_BUDGET_EXCEEDED",
+    "H3_CONTENT_REJECTED",
+    "H3_FAILED",
+  ];
 
   const required: MessageKey[] = [
     ...qcReasons.map((r) => `qc.${r}` as MessageKey),
@@ -111,6 +133,12 @@ test("dictionary covers every backend enum and error code", () => {
     ...licenseTypes.map((l) => `music.license.${l}` as MessageKey),
     ...musicMoods.map((m) => `music.mood.${m}` as MessageKey),
     ...musicStatuses.map((s) => `music.status.${s}` as MessageKey),
+    ...videoTypes.map((t) => `video.type.${t}` as MessageKey),
+    ...videoRoles.map((r) => `video.role.${r}` as MessageKey),
+    ...h3Backends.map((b) => `h3.backend.${b}` as MessageKey),
+    ...h3Outcomes.map((o) => `h3.outcome.${o}` as MessageKey),
+    ...h3Reasons.map((r) => `h3.reason.${r}` as MessageKey),
+    "review.filters.VIDEO",
     "error.UNSUPPORTED_FILE_TYPE.heic",
   ];
 

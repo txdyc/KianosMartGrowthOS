@@ -5,7 +5,11 @@ import { ApiError } from "@/lib/api";
 import { errorText, useI18n } from "@/i18n";
 import type { TFunction } from "@/i18n";
 import { en } from "@/i18n/en";
-import { charLimit } from "@/lib/review";
+import {
+  charLimit,
+  VIDEO_SCRIPT_CAPTION_LIMIT,
+  VIDEO_SCRIPT_HOOK_LIMIT,
+} from "@/lib/review";
 import {
   adCopyFieldLimit,
   adCopyFields,
@@ -50,6 +54,7 @@ export function TextAssetCard({
   const [error, setError] = useState<string | null>(null);
 
   const isAdCopy = item.specCode === "AD_COPY";
+  const isVideoScript = item.specCode === "VIDEO_SCRIPT";
   const body = editing ? draft : (item.textBody ?? "");
   const isSeo = item.specCode === "COPY_SEO";
   const isHtml = item.specCode === "COPY_LONG" || item.specCode === "COPY_SHORT";
@@ -59,7 +64,9 @@ export function TextAssetCard({
   const limit =
     isSeo && item.textBody !== null
       ? charLimit("COPY_SEO", "title")
-      : charLimit(item.specCode);
+      : isVideoScript
+        ? null
+        : charLimit(item.specCode);
   const overLimit = limit !== null && charCount > limit;
 
   const startEdit = () => {
@@ -96,7 +103,7 @@ export function TextAssetCard({
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-600 dark:text-zinc-400">
         <span className="font-medium text-zinc-800 dark:text-zinc-200">{specText(t, item.specCode)}</span>
         <span>v{item.version}</span>
-        {!isAdCopy ? (
+        {!isAdCopy && !isVideoScript ? (
           <span className={overLimit ? "font-medium text-red-600 dark:text-red-400" : undefined}>
             {charCount.toLocaleString()}
             {limit !== null ? ` / ${limit}` : ""}
@@ -116,6 +123,8 @@ export function TextAssetCard({
       {/* body */}
       {isAdCopy ? (
         <AdCopyView copy={parseAdCopy(item.textBody)} />
+      ) : isVideoScript ? (
+        <VideoScriptView body={body} />
       ) : isSeo ? (
         <SeoView body={body} t={t} />
       ) : isHtml ? (
@@ -281,6 +290,65 @@ function AdCopyEditor({
       })}
     </div>
   );
+}
+
+/** Read-only view of a VIDEO_SCRIPT: the hook and every caption with counts. */
+function VideoScriptView({ body }: { body: string }) {
+  const { t } = useI18n();
+  const script = parseVideoScript(body);
+  return (
+    <div className="flex flex-col gap-1.5">
+      <ScriptLine
+        label={t("review.videoScript.hook")}
+        text={script.hook}
+        limit={VIDEO_SCRIPT_HOOK_LIMIT}
+      />
+      {script.captions.map((caption, index) => (
+        <ScriptLine
+          key={`${index}:${caption}`}
+          label={t("review.videoScript.caption", { n: index + 1 })}
+          text={caption}
+          limit={VIDEO_SCRIPT_CAPTION_LIMIT}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ScriptLine({ label, text, limit }: { label: string; text: string; limit: number }) {
+  const over = text.length > limit;
+  return (
+    <div className="flex items-start gap-2 text-xs">
+      <span className="w-20 shrink-0 truncate font-medium text-zinc-500 dark:text-zinc-400">
+        {label}
+      </span>
+      <span className="flex-1 break-words text-zinc-700 dark:text-zinc-300">{text}</span>
+      <span
+        className={
+          over ? "shrink-0 font-medium text-red-600 dark:text-red-400" : "shrink-0 text-zinc-400"
+        }
+      >
+        {text.length} / {limit}
+      </span>
+    </div>
+  );
+}
+
+/** Parse a VIDEO_SCRIPT textBody JSON; malformed/empty input → empty script. */
+function parseVideoScript(body: string | null): { hook: string; captions: string[] } {
+  if (body === null || body.trim() === "") {
+    return { hook: "", captions: [] };
+  }
+  try {
+    const parsed = JSON.parse(body) as { hook?: unknown; captions?: unknown };
+    const hook = typeof parsed.hook === "string" ? parsed.hook : "";
+    const captions = Array.isArray(parsed.captions)
+      ? parsed.captions.filter((caption): caption is string => typeof caption === "string")
+      : [];
+    return { hook, captions };
+  } catch {
+    return { hook: "", captions: [] };
+  }
 }
 
 function SeoView({ body, t }: { body: string; t: TFunction }) {

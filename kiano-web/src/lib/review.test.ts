@@ -23,6 +23,15 @@ function item(assetId: number, sku: string, status: ReviewItem["status"] = "IN_R
     textBody: null,
     charCount: null,
     factVersion: null,
+    videoUrl: null,
+    noMusicUrl: null,
+    posterUrl: null,
+    durationS: null,
+    aiRatio: null,
+    edl: null,
+    sourceUrls: null,
+    h3: null,
+    h3Fallback: null,
   };
 }
 
@@ -98,5 +107,11 @@ describe("charLimit", () => {
     expect(charLimit("COPY_SEO", "description")).toBe(155);
     expect(charLimit("COPY_LONG")).toBeNull();
     expect(charLimit("PAGE_MAIN")).toBeNull();
+  });
+
+  test("VIDEO_SCRIPT limits the hook at 40 and every caption at 42", () => {
+    expect(charLimit("VIDEO_SCRIPT", "hook")).toBe(40);
+    expect(charLimit("VIDEO_SCRIPT", "caption")).toBe(42);
+    expect(charLimit("VIDEO_SCRIPT")).toBeNull();
   });
 });

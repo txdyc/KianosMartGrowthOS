@@ -40,6 +40,15 @@ function adAsset(
     textBody: null,
     charCount: null,
     factVersion: null,
+    videoUrl: null,
+    noMusicUrl: null,
+    posterUrl: null,
+    durationS: null,
+    aiRatio: null,
+    edl: null,
+    sourceUrls: null,
+    h3: null,
+    h3Fallback: null,
   };
 }
 

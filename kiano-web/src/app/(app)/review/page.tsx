@@ -11,6 +11,7 @@ import { groupBySku, keyToDecision, nextFocus } from "@/lib/review";
 import type { Decision, ReviewGroup } from "@/lib/review";
 import { RejectDialog } from "@/components/RejectDialog";
 import { TextAssetCard } from "@/components/TextAssetCard";
+import { VideoAssetCard } from "@/components/VideoAssetCard";
 import type { FactsJson, RejectReason, ReviewItem } from "@/lib/types";
 
 const secondaryButton =
@@ -51,7 +52,7 @@ function ReviewBoard() {
   const [confirmingProductId, setConfirmingProductId] = useState<number | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [kind, setKind] = useState<"all" | "IMAGE" | "TEXT">("all");
+  const [kind, setKind] = useState<"all" | "IMAGE" | "TEXT" | "VIDEO">("all");
   // assetId of the text being edited inline; while non-null, A/R/G shortkeys
   // are disabled so typing "a" / "r" / "g" never triggers a decision.
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -281,7 +282,7 @@ function ReviewBoard() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center gap-3">
-        {(["all", "IMAGE", "TEXT"] as const).map((value) => (
+        {(["all", "IMAGE", "TEXT", "VIDEO"] as const).map((value) => (
           <button
             key={value}
             type="button"
@@ -354,7 +355,19 @@ function ReviewBoard() {
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {group.items.map((item) =>
-                item.kind === "TEXT" || item.specCode.startsWith("COPY_") ? (
+                item.specCode === "VIDEO_AD" ? (
+                  <VideoAssetCard
+                    key={item.assetId}
+                    item={item}
+                    focused={item.assetId === focusedId}
+                    busy={item.assetId === busyId}
+                    onFocus={() => setFocusedId(item.assetId)}
+                    onApprove={() => void decide(item, "APPROVE")}
+                    onReject={() => setRejecting(item)}
+                    onRegenerate={() => void decide(item, "REGENERATE")}
+                    onReload={load}
+                  />
+                ) : item.kind === "TEXT" || item.specCode.startsWith("COPY_") ? (
                   <TextAssetCard
                     key={item.assetId}
                     item={item}

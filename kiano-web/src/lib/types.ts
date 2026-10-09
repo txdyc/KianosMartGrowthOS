@@ -3,6 +3,8 @@
  * Jackson). Keep the field names in sync with kiano-api.
  */
 
+import type { Edl } from "./edl";
+
 export type ContentTier = "HERO" | "STANDARD";
 export type ShotState = "OK" | "RESHOOT" | "MISSING";
 export type TaskStatus = "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED";
@@ -214,6 +216,34 @@ export interface ReviewItem {
   textBody: string | null;
   charCount: number | null;
   factVersion: number | null;
+  // video assets (VIDEO_AD) only; null elsewhere
+  videoUrl: string | null;
+  noMusicUrl: string | null;
+  posterUrl: string | null;
+  durationS: number | null;
+  aiRatio: number | null;
+  edl: Edl | null;
+  sourceUrls: Record<string, string> | null;
+  h3: H3Outcome | null;
+  h3Fallback: H3Fallback | null;
+}
+
+/** How the H3 hook went, as recorded in a video's provenance. */
+export interface H3Outcome {
+  attempts: H3Attempt[];
+  backend: string | null;
+}
+
+/** One backend attempt: LOCAL/API with SUCCEEDED/TIMEOUT/FAILED and a reason code. */
+export interface H3Attempt {
+  backend: string | null;
+  outcome: string;
+  reason: string | null;
+}
+
+/** Set when the video fell back to real footage instead of an H3 hook. */
+export interface H3Fallback {
+  reason: string;
 }
 
 /** Lifecycle of an ad export (GET /api/v1/content/ads/exports). */

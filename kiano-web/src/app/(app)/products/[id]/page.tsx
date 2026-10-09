@@ -8,6 +8,7 @@ import { PipelinePanel } from "@/components/PipelinePanel";
 import { FactsPanel } from "@/components/FactsPanel";
 import { PublishPanel } from "@/components/PublishPanel";
 import { AdsPanel } from "@/components/AdsPanel";
+import { VideosPanel } from "@/components/VideosPanel";
 import type { ProductShotStatus, ShotStatusLine } from "@/lib/types";
 
 export default function ProductDetailPage({ params }: PageProps<"/products/[id]">) {
@@ -102,6 +103,7 @@ export default function ProductDetailPage({ params }: PageProps<"/products/[id]"
         <div className="flex flex-col gap-4">
           <FactsPanel productId={status.productId} />
           <AdsPanel productId={status.productId} sku={status.sku} tier={status.tier} />
+          <VideosPanel productId={status.productId} tier={status.tier} />
           <PublishPanel productId={status.productId} />
         </div>
       </div>

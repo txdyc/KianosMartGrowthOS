@@ -435,6 +435,60 @@ export const en = {
   "music.error.fileExtension": "Only mp3, m4a and wav files are accepted.",
   "music.error.fileSize": "Music files must be 20 MB or smaller.",
 
+  // short videos (C5)
+  "videos.title": "Short videos",
+  "videos.heroOnly": "Short videos are available for HERO tier products only.",
+  "videos.generateScript": "Generate scripts",
+  "videos.generateVideo": "Generate videos",
+  "videos.script": "Script",
+  "videos.video": "Video",
+  "videos.noScript": "No script yet",
+  "videos.notRendered": "Not rendered",
+  "videos.preconditions": "Video render blocked — fix these first:",
+  "videos.missing.script": "Video script",
+  "videos.missing.footage": "Accepted footage",
+  "videos.missing.pageMain": "Approved main page image",
+  "videos.missing.pageScene": "Approved scene image",
+  "video.type.demo": "Demo",
+  "video.type.problem": "Problem",
+  "video.type.unboxing": "Unboxing",
+  "video.role.hook": "Hook",
+  "video.role.body": "Body",
+  "video.role.captions": "Captions",
+  "video.role.endcard": "End card",
+  "video.aiRatio": "AI share",
+  "video.aiRatioHint": "Share of generated (H3) seconds; over 30% is blocked.",
+  "video.withMusic": "With music",
+  "video.noMusic": "No music (TikTok)",
+  "video.tiktokHint": "TikTok version: pair it with the platform's commercial music.",
+  "video.h3": "H3",
+  "video.h3Fallback": "H3 fallback",
+  "video.approve": "Approve",
+  "video.reject": "Reject",
+  "video.regenerate": "Regenerate",
+  "video.editCut": "Edit cut",
+  "video.total": "Total",
+  "video.trimIn": "In",
+  "video.trimOut": "Out",
+  "video.saveCut": "Save and re-compose",
+  "video.resetCut": "Reset",
+  "video.editHint": "Edit an in/out point to preview that frame.",
+  "h3.backend.LOCAL": "Local",
+  "h3.backend.API": "API",
+  "h3.outcome.SUCCEEDED": "succeeded",
+  "h3.outcome.TIMEOUT": "timed out",
+  "h3.outcome.FAILED": "failed",
+  "h3.reason.H3_NO_BACKEND": "no backend available",
+  "h3.reason.H3_LOCAL_TIMEOUT": "local timeout",
+  "h3.reason.H3_LOCAL_FAILED": "local failed",
+  "h3.reason.H3_TIMEOUT": "API timeout",
+  "h3.reason.H3_BUDGET_EXCEEDED": "budget exceeded",
+  "h3.reason.H3_CONTENT_REJECTED": "content rejected",
+  "h3.reason.H3_FAILED": "API failed",
+  "review.filters.VIDEO": "Videos",
+  "review.videoScript.hook": "Hook",
+  "review.videoScript.caption": "Caption {n}",
+
   // generic
   "loading": "Loading…",
 
@@ -513,6 +567,20 @@ export const en = {
 
   // C5 music errors
   "error.DUPLICATE_TRACK": "This audio file is already in the library.",
+
+  // C5 short-video errors
+  "error.VIDEO_PRECONDITIONS": "The video render requirements are not met.",
+  "error.VIDEO_SOURCE_TOO_SHORT":
+    "The footage is shorter than this video type needs; shorten the body or use another shot.",
+  "error.AI_RATIO_EXCEEDED":
+    "AI footage is more than 30% of the video; trim the hook or add real footage.",
+  "error.SEGMENT_OUT_OF_SOURCE": "A segment goes past the end of its footage.",
+  "error.TOTAL_OUT_OF_RANGE": "The total length must be 15–30 seconds.",
+  "error.BODY_OUT_OF_RANGE": "The body segment is outside this type's allowed length.",
+  "error.OVERLAY_OUT_OF_TIMELINE": "A caption falls outside the cut.",
+  "error.ASSET_NOT_EDITABLE": "This video cannot be edited.",
+  "error.MUSIC_LIBRARY_EMPTY":
+    "The music library has no active track. Upload one under Settings → Music.",
 } as const;
 
 export type MessageKey = keyof typeof en;

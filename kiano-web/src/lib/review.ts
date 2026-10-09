@@ -18,13 +18,24 @@ const CHAR_LIMITS: Record<string, number> = {
   COPY_GSHOP: 150,
 };
 
+/** VIDEO_SCRIPT limits (VideoScriptDraft): the hook and every caption. */
+export const VIDEO_SCRIPT_HOOK_LIMIT = 40;
+export const VIDEO_SCRIPT_CAPTION_LIMIT = 42;
+
 /**
- * Max characters of a copy spec, or for SEO the title/description part.
- * Unknown specs (and SEO without a part) return null — no enforced limit.
+ * Max characters of a copy spec, or for SEO the title/description part and
+ * for VIDEO_SCRIPT the hook / one caption. Unknown specs (and a partless SEO
+ * or script) return null — no enforced limit.
  */
-export function charLimit(specCode: string, part?: "title" | "description"): number | null {
+export function charLimit(
+  specCode: string,
+  part?: "title" | "description" | "hook" | "caption",
+): number | null {
   if (specCode === "COPY_SEO") {
     return part === "title" ? CHAR_LIMITS.COPY_SEO_TITLE : CHAR_LIMITS.COPY_SEO_DESCRIPTION;
+  }
+  if (specCode === "VIDEO_SCRIPT") {
+    return part === "hook" ? VIDEO_SCRIPT_HOOK_LIMIT : part === "caption" ? VIDEO_SCRIPT_CAPTION_LIMIT : null;
   }
   return CHAR_LIMITS[specCode] ?? null;
 }

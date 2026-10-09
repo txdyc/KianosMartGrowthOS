@@ -161,7 +161,8 @@ public class ReviewService {
             String textBody, Integer charCount, Integer factVersion,
             // video assets (VIDEO_AD) only; null elsewhere
             String videoUrl, String noMusicUrl, String posterUrl, BigDecimal durationS,
-            BigDecimal aiRatio, JsonNode edl, Map<String, String> sourceUrls) {
+            BigDecimal aiRatio, JsonNode edl, Map<String, String> sourceUrls,
+            JsonNode h3, JsonNode h3Fallback) {
     }
 
     /** APPROVE/REJECT return the updated item; REGENERATE returns the new run. */
@@ -635,13 +636,16 @@ public class ReviewService {
         String textBody = text ? asset.getTextBody() : null;
         Integer charCount = text && asset.getTextBody() != null
                 ? asset.getTextBody().replaceAll("<[^>]*>", "").strip().length() : null;
-        // video assets get playback renditions, the EDL and the footage preview URLs
+        // video assets get playback renditions, the EDL, the footage preview URLs
+        // and the H3 outcome the review card shows (attempts and fallback)
         boolean video = "VIDEO_AD".equals(asset.getSpecCode());
         String videoUrl = video ? presign(asset.getObjectKey()) : null;
         String noMusicUrl = null;
         String posterUrl = null;
         Map<String, String> sourceUrls = null;
         JsonNode edl = null;
+        JsonNode h3 = null;
+        JsonNode h3Fallback = null;
         if (video) {
             JsonNode renditions = asset.getRenditionsJson() == null ? null
                     : objectMapper.readTree(asset.getRenditionsJson());
@@ -650,10 +654,10 @@ public class ReviewService {
                 posterUrl = presignKey(renditions.path("poster").asString());
             }
             sourceUrls = shotUrls(tenantId, asset.getProductId());
-            edl = objectMapper.readTree(asset.getProvenanceJson()).path("edl");
-            if (edl != null && edl.isMissingNode()) {
-                edl = null;
-            }
+            JsonNode provenance = objectMapper.readTree(asset.getProvenanceJson());
+            edl = present(provenance.path("edl"));
+            h3 = present(provenance.path("h3"));
+            h3Fallback = present(provenance.path("h3Fallback"));
         }
         return new ReviewItem(asset.getId(), asset.getProductId(),
                 product == null ? null : product.sku(), product == null ? null : product.name(),
@@ -662,7 +666,12 @@ public class ReviewService {
                 presign(asset.getThumbObjectKey()), sourceThumbUrl, sourceUrl,
                 asset.getFileName(), textBody, charCount, asset.getFactVersion(),
                 videoUrl, noMusicUrl, posterUrl, asset.getDurationS(), asset.getAiRatio(), edl,
-                sourceUrls);
+                sourceUrls, h3, h3Fallback);
+    }
+
+    /** The node itself, or null when the field is absent or JSON null. */
+    private static @Nullable JsonNode present(JsonNode node) {
+        return node == null || node.isMissingNode() || node.isNull() ? null : node;
     }
 
     /** V1/V2/V3 preview URLs for the EDL editor (accepted footage of the product). */
