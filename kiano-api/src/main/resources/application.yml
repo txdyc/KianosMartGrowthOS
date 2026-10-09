@@ -88,7 +88,22 @@ kiano:
       max-seo-title: 60
       max-seo-description: 155
     video:
+      hook-seconds: 3
+      captions-seconds: 5
+      end-card-seconds: 4
+      min-total: 15
+      max-total: 30
+      max-ai-ratio: 0.30
+      window-candidates: 5
+      portrait-tolerance: 0.02
+      original-volume: 0.5
+      music-volume: 0.35
+      music-fade-out: 1.5
       mood:
         demo: upbeat
         problem: uplifting
         unboxing: upbeat
+      recipe:
+        demo: {body-min-seconds: 8, body-max-seconds: 15}
+        problem: {body-min-seconds: 8, body-max-seconds: 12}
+        unboxing: {body-min-seconds: 8, body-max-seconds: 14}
