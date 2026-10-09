@@ -121,6 +121,21 @@ class AdBaseSelectorTest {
     }
 
     @Test
+    void publishedMainAndScenes_areEligibleBases() {
+        // C3 production publishing flips approved page images to PUBLISHED.
+        long main = asset(productId, "PAGE_MAIN", "main", 1, "PUBLISHED", "{}");
+        long scene1 = asset(productId, "PAGE_SCENE", "scene1", 1, "PUBLISHED", "{}");
+        long scene2 = asset(productId, "PAGE_SCENE", "scene2", 2, "APPROVED", "{}");
+
+        assertThat(selector.select(tenantId, productId, AdHook.PRICEHOOK, 0).assetId())
+                .isEqualTo(main);
+        assertThat(selector.select(tenantId, productId, AdHook.PROBLEM, 0).assetId())
+                .isEqualTo(scene2);
+        assertThat(selector.select(tenantId, productId, AdHook.TRUST, 0).assetId())
+                .isEqualTo(scene1);
+    }
+
+    @Test
     void demo_usesV1FrameCandidate_real() {
         long video = media(productId, "V1", "VIDEO", "ACCEPTED", 12.0);
         List<FrameExtractor.Frame> frames = List.of(

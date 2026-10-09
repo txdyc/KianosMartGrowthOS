@@ -31,4 +31,15 @@ public class MediaProperties {
     public void setFfmpegPath(String ffmpegPath) {
         this.ffmpegPath = ffmpegPath;
     }
+
+    /** Upper bound for one ffmpeg frame extraction; a hung process is killed after it. */
+    private java.time.Duration ffmpegTimeout = java.time.Duration.ofSeconds(60);
+
+    public java.time.Duration getFfmpegTimeout() {
+        return ffmpegTimeout;
+    }
+
+    public void setFfmpegTimeout(java.time.Duration ffmpegTimeout) {
+        this.ffmpegTimeout = ffmpegTimeout;
+    }
 }

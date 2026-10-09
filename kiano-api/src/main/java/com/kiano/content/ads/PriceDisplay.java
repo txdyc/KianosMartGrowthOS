@@ -13,8 +13,9 @@ import org.springframework.http.HttpStatus;
 /**
  * The price that an ad static shows (§7.3): always the current {@code price};
  * the struck-out regular price and an "Ends {d MMM}" label appear only while
- * a real promotion is running - sale price lower than regular AND a future end
- * date. The check uses the render time, so an expired promotion stops showing
+ * a real promotion is running - sale price (and the charged price) lower than
+ * regular, a started window AND a future end date. The check uses the render
+ * time, so an expired promotion stops showing
  * strikethrough even before Woo syncs the price back (Review Focus 1).
  */
 public record PriceDisplay(String current, @Nullable String strike,
@@ -31,15 +32,24 @@ public record PriceDisplay(String current, @Nullable String strike,
             throw new ApiException(HttpStatus.CONFLICT, "PRICE_MISSING",
                     "This product has no price to display on the ad");
         }
-        boolean saleRunning = isSaleRunning(product, now);
+        boolean saleRunning = isSaleRunning(product, current, now);
         String strike = saleRunning ? GhsFormat.format(product.regularPrice()) : null;
         String endsLabel = saleRunning ? "Ends " + ENDS_FORMAT.format(product.saleToAt()) : null;
         return new PriceDisplay(GhsFormat.format(current), strike, endsLabel, current);
     }
 
-    private static boolean isSaleRunning(ProductView product, Instant now) {
+    /**
+     * A promotion is running when the sale price is below regular, the window
+     * has started (a scheduled sale shows no strikethrough yet) and not ended,
+     * and the price Woo actually charges is below regular.
+     */
+    private static boolean isSaleRunning(ProductView product, BigDecimal current, Instant now) {
         if (product.salePrice() == null || product.regularPrice() == null
-                || product.salePrice().compareTo(product.regularPrice()) >= 0) {
+                || product.salePrice().compareTo(product.regularPrice()) >= 0
+                || current.compareTo(product.regularPrice()) >= 0) {
+            return false;
+        }
+        if (product.saleFromAt() != null && product.saleFromAt().isAfter(now)) {
             return false;
         }
         return product.saleToAt() != null && product.saleToAt().isAfter(now);

@@ -7,7 +7,6 @@ import com.kiano.content.ads.AdCopyTaskHandler;
 import com.kiano.content.ads.AdCopyText;
 import com.kiano.content.ads.AdHook;
 import com.kiano.content.ads.AdRenderTaskHandler;
-import com.kiano.content.ads.FrameExtractor;
 import com.kiano.content.asset.AssetService.AssetView;
 import com.kiano.content.copy.CopyAssembler;
 import com.kiano.content.copy.PlainText;
@@ -29,10 +28,6 @@ import com.kiano.platform.queue.TaskQueue;
 import com.kiano.platform.storage.ObjectStorage;
 import com.kiano.platform.web.ApiException;
 import com.kiano.workerprotocol.JobStep;
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -115,7 +110,6 @@ public class ReviewService {
     private final AssetService assetService;
     private final TextPrecheck textPrecheck;
     private final FactSheetService factSheetService;
-    private final FrameExtractor frameExtractor;
     private final SecureRandom random = new SecureRandom();
 
     public ReviewService(AssetMapper assetMapper, AssetReviewMapper reviewMapper,
@@ -124,7 +118,7 @@ public class ReviewService {
             WorkflowRegistry workflowRegistry, AuditLog auditLog, ObjectMapper objectMapper,
             JdbcTemplate jdbcTemplate, ApplicationEventPublisher events, TaskQueue queue,
             AssetService assetService, TextPrecheck textPrecheck,
-            FactSheetService factSheetService, FrameExtractor frameExtractor) {
+            FactSheetService factSheetService) {
         this.assetMapper = assetMapper;
         this.reviewMapper = reviewMapper;
         this.sourceMediaMapper = sourceMediaMapper;
@@ -141,7 +135,6 @@ public class ReviewService {
         this.assetService = assetService;
         this.textPrecheck = textPrecheck;
         this.factSheetService = factSheetService;
-        this.frameExtractor = frameExtractor;
     }
 
     public enum Decision {
@@ -400,57 +393,18 @@ public class ReviewService {
         }
     }
 
-    /** The next candidate frame after the one the demo static used. */
+    /**
+     * The next candidate frame after the one the demo static used, read from
+     * the frameCandidate the render recorded in provenance (legacy renders
+     * without it used candidate 0). The render wraps the index, so no V1
+     * download or ffmpeg run is needed inside this transaction.
+     */
     private int nextFrameCandidate(AssetEntity asset) {
         if (asset.getVariant() == null || !asset.getVariant().startsWith("demo-")) {
             return 0;
         }
         JsonNode provenance = objectMapper.readTree(asset.getProvenanceJson());
-        if (!provenance.path("frameTime").isNumber()) {
-            return 0;
-        }
-        double oldTime = provenance.path("frameTime").asDouble();
-        SourceMediaEntity video = sourceMediaMapper.selectOne(Wrappers.<SourceMediaEntity>lambdaQuery()
-                .eq(SourceMediaEntity::getTenantId, asset.getTenantId())
-                .eq(SourceMediaEntity::getProductId, asset.getProductId())
-                .eq(SourceMediaEntity::getShotCode, "V1")
-                .eq(SourceMediaEntity::getKind, "VIDEO")
-                .eq(SourceMediaEntity::getStatus, "ACCEPTED")
-                .orderByDesc(SourceMediaEntity::getId)
-                .last("limit 1"));
-        if (video == null) {
-            return 0;
-        }
-        byte[] bytes = storage.download(video.getObjectKey());
-        Path temp;
-        try {
-            String suffix = video.getOriginalFileName() != null
-                    && video.getOriginalFileName().contains(".")
-                            ? video.getOriginalFileName()
-                                    .substring(video.getOriginalFileName().lastIndexOf('.'))
-                            : ".mp4";
-            temp = Files.createTempFile("ad-regen-frame", suffix);
-            Files.write(temp, bytes);
-        } catch (IOException ex) {
-            throw new UncheckedIOException(ex);
-        }
-        try {
-            double duration = video.getDurationS() == null ? 0
-                    : video.getDurationS().doubleValue();
-            List<FrameExtractor.Frame> frames = frameExtractor.candidates(temp, duration);
-            for (int i = 0; i < frames.size(); i++) {
-                if (Math.abs(frames.get(i).timeSeconds() - oldTime) < 0.001) {
-                    return (i + 1) % frames.size();
-                }
-            }
-            return 0;
-        } finally {
-            try {
-                Files.deleteIfExists(temp);
-            } catch (IOException ignored) {
-                // best effort cleanup
-            }
-        }
+        return provenance.path("frameCandidate").asInt(0) + 1;
     }
 
     /** Text assets regenerate by re-running the copy generator for that spec. */

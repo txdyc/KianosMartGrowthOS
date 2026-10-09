@@ -27,7 +27,7 @@ import tools.jackson.databind.ObjectMapper;
  * uses the approved PAGE_MAIN, problem and trust the two most recently approved
  * PAGE_SCENE shots (problem gets the newest, trust the second - when only one
  * exists both share it), and demo a V1 frame chosen by {@link FrameExtractor}.
- * Only already-approved assets and ACCEPTED videos are eligible; a missing base
+ * Only approved (or already published) assets and ACCEPTED videos are eligible; a missing base
  * is 409 AD_BASE_MISSING. The source type decides the file-name segment: real
  * for PAGE_MAIN and V1 frames, mixed for PAGE_SCENE.
  */
@@ -72,7 +72,7 @@ public class AdBaseSelector {
 
     /** Index 0 is the newest approved PAGE_SCENE, 1 the second newest (shared). */
     private BaseImage fromScene(long tenantId, long productId, int index) {
-        List<AssetEntity> scenes = approved(tenantId, productId, "PAGE_SCENE");
+        List<AssetEntity> scenes = eligibleBases(tenantId, productId, "PAGE_SCENE");
         if (scenes.isEmpty()) {
             throw missingBase("PAGE_SCENE");
         }
@@ -137,24 +137,22 @@ public class AdBaseSelector {
     }
 
     private Optional<AssetEntity> latestApproved(long tenantId, long productId, String specCode) {
-        List<AssetEntity> rows = assetMapper.selectList(Wrappers.<AssetEntity>lambdaQuery()
-                .eq(AssetEntity::getTenantId, tenantId)
-                .eq(AssetEntity::getProductId, productId)
-                .eq(AssetEntity::getSpecCode, specCode)
-                .eq(AssetEntity::getStatus, AssetStatus.APPROVED.name())
-                .orderByDesc(AssetEntity::getVersion)
-                .last("limit 1"));
-        return rows.isEmpty() ? Optional.empty() : Optional.of(rows.get(0));
+        return eligibleBases(tenantId, productId, specCode).stream().findFirst();
     }
 
-    /** Approved assets, newest version first. */
-    private List<AssetEntity> approved(long tenantId, long productId, String specCode) {
+    /**
+     * Page images eligible as ad bases, newest version first: APPROVED and also
+     * PUBLISHED, since C3 production publishing flips approved images to
+     * PUBLISHED and live products are exactly the ones that get ads.
+     */
+    public List<AssetEntity> eligibleBases(long tenantId, long productId, String specCode) {
         return new ArrayList<>(assetMapper.selectList(
                 Wrappers.<AssetEntity>lambdaQuery()
                         .eq(AssetEntity::getTenantId, tenantId)
                         .eq(AssetEntity::getProductId, productId)
                         .eq(AssetEntity::getSpecCode, specCode)
-                        .eq(AssetEntity::getStatus, AssetStatus.APPROVED.name())
+                        .in(AssetEntity::getStatus, AssetStatus.APPROVED.name(),
+                                AssetStatus.PUBLISHED.name())
                         .orderByDesc(AssetEntity::getVersion)));
     }
 

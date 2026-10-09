@@ -94,16 +94,24 @@ class AdReplacementServiceTest {
     }
 
     @Test
-    void staleWithoutReplacementYet_newStatusNull() {
+    void staleWithoutApprovedReplacementYet_notListed() {
+        // the new version is still pending review - nothing to swap in yet
         long oldId = staticAsset("pricehook-1080x1080", 1, "STALE", "MG-KTL17_old.jpg");
+        staticAsset("pricehook-1080x1080", 2, "IN_REVIEW", "MG-KTL17_review.jpg");
         exportedPublication(List.of(oldId), "APPLIED");
 
-        List<Replacement> replacements = service.list(tenantId);
+        assertThat(service.list(tenantId)).isEmpty();
+    }
 
-        assertThat(replacements).singleElement().satisfies(replacement -> {
-            assertThat(replacement.newStatus()).isNull();
-            assertThat(replacement.newAssetId()).isNull();
-        });
+    @Test
+    void replacementAlreadyExported_notListedAnymore() {
+        long oldId = staticAsset("pricehook-1080x1080", 1, "STALE", "MG-KTL17_old.jpg");
+        long newId = staticAsset("pricehook-1080x1080", 2, "APPROVED", "MG-KTL17_new.jpg");
+        exportedPublication(List.of(oldId), "APPLIED");
+        // the operator exported the new version and swapped it on the platform
+        exportedPublication(List.of(newId), "APPLIED");
+
+        assertThat(service.list(tenantId)).isEmpty();
     }
 
     @Test

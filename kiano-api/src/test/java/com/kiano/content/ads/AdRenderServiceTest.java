@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
@@ -355,7 +357,89 @@ class AdRenderServiceTest {
                         + "and tenant_id = ?", Integer.class, tenantId)).isZero();
     }
 
+    @Test
+    void publishedPageImages_satisfyPreconditions_andRenderAllTwelve() {
+        // C3 production publishing flips the approved page images to PUBLISHED
+        jdbcTemplate.update("update asset set status = 'PUBLISHED' "
+                + "where spec_code in ('PAGE_MAIN', 'PAGE_SCENE')");
+
+        RenderOutcome outcome = service.renderAll(tenantId, productId, null, 0, false);
+
+        assertThat(outcome.rendered()).hasSize(12);
+        assertThat(outcome.skipped()).isEmpty();
+    }
+
+    @Test
+    void fullRender_extractsDemoFramesOnce_forAllThreeSizes() {
+        service.renderAll(tenantId, productId, null, 0, false);
+
+        verify(frameExtractor, times(1)).candidates(any(Path.class), anyDouble());
+    }
+
+    @Test
+    void demoProvenance_recordsFrameCandidate() throws Exception {
+        service.renderAll(tenantId, productId, List.of("demo-1080x1080"), 1, false);
+
+        JsonNode provenance = mapper.readTree(latestAdStatic("demo-1080x1080").getProvenanceJson());
+        assertThat(provenance.path("frameCandidate").asInt()).isEqualTo(1);
+        assertThat(provenance.path("frameTime").asDouble()).isEqualTo(3.0);
+    }
+
+    @Test
+    void priceOnly_followUp_restalesApprovedOldPrice_andAutoApprovesFromIt() {
+        // the first re-render already auto-approved v2 at an intermediate price (279)
+        long v2 = adStaticPriced("pricehook-1080x1080", 2, "APPROVED", 279,
+                samePricehookProvenance());
+
+        service.renderAll(tenantId, productId, List.of("pricehook-1080x1080"), 0, true, null);
+
+        assertThat(jdbcTemplate.queryForObject("select status from asset where id = ?",
+                String.class, v2)).isEqualTo("STALE");
+        AssetEntity latest = latestAdStatic("pricehook-1080x1080");
+        assertThat(latest.getVersion()).isEqualTo(3);
+        assertThat(latest.getStatus()).isEqualTo("APPROVED");
+        assertThat(latest.getPriceSnapshot()).isEqualByComparingTo("249");
+    }
+
+    @Test
+    void priceOnly_variantAlreadyAtCurrentPrice_isNotRerendered() {
+        adStaticPriced("pricehook-1080x1080", 1, "APPROVED", 249, samePricehookProvenance());
+
+        RenderOutcome outcome = service.renderAll(tenantId, productId,
+                List.of("pricehook-1080x1080"), 0, true, null);
+
+        assertThat(outcome.rendered()).isEmpty();
+        assertThat(outcome.skipped()).containsEntry("pricehook-1080x1080", "UP_TO_DATE");
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from asset where spec_code = 'AD_STATIC'", Integer.class))
+                .isEqualTo(1);
+    }
+
     // ---- helpers ----
+
+    /** Provenance matching what a pricehook render produces now, apart from the price. */
+    private String samePricehookProvenance() {
+        long mainId = jdbcTemplate.queryForObject(
+                "select id from asset where spec_code = 'PAGE_MAIN'", Long.class);
+        long copyId = jdbcTemplate.queryForObject(
+                "select id from asset where spec_code = 'AD_COPY' and variant = 'pricehook'",
+                Long.class);
+        return "{\"template\":{\"code\":\"AD_PRICEHOOK\",\"version\":1},"
+                + "\"adCopyAssetId\":" + copyId + ",\"baseAssetId\":" + mainId + ","
+                + "\"sourceMediaId\":null,\"frameTime\":null}";
+    }
+
+    /** A price-dependent AD_STATIC row with a price snapshot. */
+    private long adStaticPriced(String variant, int version, String status, int snapshot,
+            String provenanceJson) {
+        return jdbcTemplate.queryForObject(
+                "insert into asset (tenant_id, product_id, spec_code, variant, version, kind, "
+                        + "status, precheck_json, provenance_json, depends_on_price, price_snapshot) "
+                        + "values (?, ?, 'AD_STATIC', ?, ?, 'IMAGE', ?, '{}'::jsonb, ?::jsonb, true, ?) "
+                        + "returning id",
+                Long.class, tenantId, productId, variant, version, status, provenanceJson,
+                java.math.BigDecimal.valueOf(snapshot));
+    }
 
     @SuppressWarnings("unchecked")
     private static void assertMissing(ApiException ex, String... expected) {

@@ -53,6 +53,8 @@ kiano:
     sync-cron: "0 0 * * * *"
   media:
     ffprobe-path: "${KIANO_FFPROBE_PATH:ffprobe}"
+    ffmpeg-path: "${KIANO_FFMPEG_PATH:ffmpeg}"
+    ffmpeg-timeout: 60s
   content:
     workflows:
       allowed-licenses: [MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, CreativeML-OpenRAIL++-M]

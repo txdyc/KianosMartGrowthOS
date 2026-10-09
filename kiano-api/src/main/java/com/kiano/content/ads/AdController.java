@@ -32,9 +32,17 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/content")
 public class AdController {
 
-    /** Render request body: variants optional (null = all twelve). */
-    public record RenderRequest(@Nullable List<String> variants, @Nullable Integer frameCandidate,
-            boolean priceOnly) {
+    /**
+     * Render request body: variants optional (null = all twelve). The
+     * price-only mode is internal to the price-change listener and is not
+     * accepted here, so a client cannot skip the preconditions.
+     */
+    public record RenderRequest(@Nullable List<String> variants, @Nullable Integer frameCandidate) {
+    }
+
+    /** Outcome of the product's latest AD_RENDER task; skipped maps variant to error code. */
+    public record RenderStatus(String status, List<String> rendered, Map<String, String> skipped,
+            @Nullable String lastError, java.time.@Nullable Instant finishedAt) {
     }
 
     /** Export request body: productIds optional (null/empty = all HERO products). */
@@ -95,8 +103,7 @@ public class AdController {
     public Map<String, Object> render(CurrentUser user, @PathVariable("id") long productId,
             @RequestBody(required = false) RenderRequest request) {
         long tenantId = user.tenantId();
-        boolean priceOnly = request != null && request.priceOnly();
-        renderService.checkPreconditions(tenantId, productId, priceOnly);
+        renderService.checkPreconditions(tenantId, productId, false);
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("productId", productId);
         if (request != null && request.variants() != null) {
@@ -104,9 +111,34 @@ public class AdController {
         }
         payload.put("frameCandidate", request == null || request.frameCandidate() == null
                 ? 0 : request.frameCandidate());
-        payload.put("priceOnly", priceOnly);
-        queue.enqueue(tenantId, AdRenderTaskHandler.TYPE, payload, dedupeKey(productId, payload));
-        return Map.of("enqueued", true, "type", AdRenderTaskHandler.TYPE);
+        payload.put("priceOnly", false);
+        boolean enqueued = queue.enqueue(tenantId, AdRenderTaskHandler.TYPE, payload,
+                dedupeKey(productId, payload)).isPresent();
+        return Map.of("enqueued", enqueued, "type", AdRenderTaskHandler.TYPE);
+    }
+
+    /**
+     * The latest AD_RENDER outcome for the product, so a render that skipped
+     * variants (or failed) is visible in the ads panel; 204 when none ran yet.
+     */
+    @GetMapping("/products/{id}/ads/render-status")
+    @PreAuthorize("hasRole('VIEWER')")
+    public ResponseEntity<RenderStatus> renderStatus(CurrentUser user,
+            @PathVariable("id") long productId) {
+        return queue.latestFor(user.tenantId(), AdRenderTaskHandler.TYPE, "productId", productId)
+                .map(task -> {
+                    List<String> rendered = new java.util.ArrayList<>();
+                    Map<String, String> skipped = new LinkedHashMap<>();
+                    if (task.result() != null) {
+                        task.result().path("rendered").forEach(node -> rendered.add(node.asText()));
+                        task.result().path("skipped").properties()
+                                .forEach(entry -> skipped.put(entry.getKey(),
+                                        entry.getValue().asText()));
+                    }
+                    return ResponseEntity.ok(new RenderStatus(task.status().name(), rendered,
+                            skipped, task.lastError(), task.finishedAt()));
+                })
+                .orElseGet(() -> ResponseEntity.noContent().build());
     }
 
     private static String dedupeKey(long productId, Map<String, Object> payload) {

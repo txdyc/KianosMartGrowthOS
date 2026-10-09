@@ -14,16 +14,25 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
  * Task 8: after a {@link ProductPriceChanged} commits, every AD_STATIC variant
- * that depends on the price gets its latest version marked STALE (when it was
- * APPROVED or PUBLISHED - the id seeds the auto-approval check) or ARCHIVED
- * (when still IN_REVIEW or DRAFT) and an {@code AD_RENDER} task is enqueued
- * with priceOnly so the new price re-renders. Variants without an existing
- * price-dependent asset are left untouched.
+ * that depends on the price is re-rendered with priceOnly. Every APPROVED or
+ * PUBLISHED version of such a variant is marked STALE - not only the latest,
+ * since an older approved version would otherwise still be exported with the
+ * old price - and the newest live/stale version seeds the auto-approval check.
+ * IN_REVIEW and DRAFT versions are ARCHIVED. Variants without a price-dependent
+ * asset are left untouched.
+ *
+ * <p>When a re-render with the same variants is already active (it may be
+ * RUNNING with the old price) a single follow-up task is queued behind it;
+ * the render skips variants that already show the current price. The work runs
+ * in its own transaction: AFTER_COMMIT code would otherwise still share the
+ * finished transaction's connection.
  */
 @Component
 public class AdPriceListener {
@@ -39,34 +48,41 @@ public class AdPriceListener {
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onPriceChanged(ProductPriceChanged event) {
         long tenantId = event.tenantId();
         long productId = event.productId();
-        Map<String, AssetEntity> latestByVariant = latestPriceVariants(tenantId, productId);
-        if (latestByVariant.isEmpty()) {
+        Map<String, List<AssetEntity>> byVariant = priceVariants(tenantId, productId);
+        if (byVariant.isEmpty()) {
             return;
         }
         List<String> variants = new ArrayList<>();
         Map<String, Long> autoApproveFrom = new LinkedHashMap<>();
         int staled = 0;
         int archived = 0;
-        for (Map.Entry<String, AssetEntity> entry : latestByVariant.entrySet()) {
-            AssetEntity asset = entry.getValue();
-            switch (asset.getStatus()) {
-                case "APPROVED", "PUBLISHED", "STALE" -> {
-                    asset.setStatus(AssetStatus.STALE.name());
-                    assetMapper.updateById(asset);
-                    autoApproveFrom.put(entry.getKey(), asset.getId());
-                    staled++;
+        for (Map.Entry<String, List<AssetEntity>> entry : byVariant.entrySet()) {
+            Long baseline = null;
+            for (AssetEntity asset : entry.getValue()) { // newest version first
+                switch (asset.getStatus()) {
+                    case "APPROVED", "PUBLISHED" -> {
+                        asset.setStatus(AssetStatus.STALE.name());
+                        assetMapper.updateById(asset);
+                        staled++;
+                        baseline = baseline == null ? asset.getId() : baseline;
+                    }
+                    case "STALE" -> baseline = baseline == null ? asset.getId() : baseline;
+                    case "IN_REVIEW", "DRAFT" -> {
+                        asset.setStatus(AssetStatus.ARCHIVED.name());
+                        assetMapper.updateById(asset);
+                        archived++;
+                    }
+                    default -> {
+                        // REJECTED and ARCHIVED versions are left as-is
+                    }
                 }
-                case "IN_REVIEW", "DRAFT" -> {
-                    asset.setStatus(AssetStatus.ARCHIVED.name());
-                    assetMapper.updateById(asset);
-                    archived++;
-                }
-                default -> {
-                    // REJECTED and ARCHIVED versions are left as-is and still re-rendered
-                }
+            }
+            if (baseline != null) {
+                autoApproveFrom.put(entry.getKey(), baseline);
             }
             variants.add(entry.getKey());
         }
@@ -82,22 +98,28 @@ public class AdPriceListener {
         if (!autoApproveFrom.isEmpty()) {
             payload.put("autoApproveFrom", autoApproveFrom);
         }
-        queue.enqueue(tenantId, AdRenderTaskHandler.TYPE, payload,
-                "ad-render:" + productId + ":price:" + String.join(",", variants));
+        String dedupeKey = "ad-render:" + productId + ":price:" + String.join(",", variants);
+        if (queue.enqueue(tenantId, AdRenderTaskHandler.TYPE, payload, dedupeKey).isEmpty()) {
+            // the twin may be RUNNING and have read the old price already, so queue
+            // one follow-up behind it (cheap when the twin was only QUEUED: the
+            // render skips variants that already show the current price)
+            queue.enqueue(tenantId, AdRenderTaskHandler.TYPE, payload, dedupeKey + ":followup");
+        }
     }
 
-    /** The latest version of every AD_STATIC variant with depends_on_price = true. */
-    private Map<String, AssetEntity> latestPriceVariants(long tenantId, long productId) {
+    /** Every version of every AD_STATIC variant with depends_on_price, newest first. */
+    private Map<String, List<AssetEntity>> priceVariants(long tenantId, long productId) {
         List<AssetEntity> rows = assetMapper.selectList(Wrappers.<AssetEntity>lambdaQuery()
                 .eq(AssetEntity::getTenantId, tenantId)
                 .eq(AssetEntity::getProductId, productId)
                 .eq(AssetEntity::getSpecCode, "AD_STATIC")
                 .eq(AssetEntity::getDependsOnPrice, true)
-                .orderByAsc(AssetEntity::getVersion));
-        Map<String, AssetEntity> latest = new LinkedHashMap<>();
+                .orderByAsc(AssetEntity::getVariant)
+                .orderByDesc(AssetEntity::getVersion));
+        Map<String, List<AssetEntity>> byVariant = new LinkedHashMap<>();
         for (AssetEntity row : rows) {
-            latest.put(row.getVariant(), row); // ascending version: the last one wins
+            byVariant.computeIfAbsent(row.getVariant(), key -> new ArrayList<>()).add(row);
         }
-        return latest;
+        return byVariant;
     }
 }

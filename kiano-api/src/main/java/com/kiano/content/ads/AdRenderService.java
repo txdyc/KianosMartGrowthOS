@@ -28,9 +28,11 @@ import com.kiano.platform.audit.AuditLog;
 import com.kiano.platform.web.ApiException;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
@@ -131,6 +133,11 @@ public class AdRenderService {
      * version, the AD_COPY asset and the base (source media + frame for demo)
      * are all the same and the template is still APPROVED. Missing copy or base
      * then fails that variant only (its previous version stays STALE).
+     * Price-only runs are idempotent: a variant whose latest version already
+     * shows the current price is skipped as UP_TO_DATE, and any APPROVED version
+     * showing another price is marked STALE first (the newest STALE version
+     * then becomes the auto-approval baseline), so a follow-up task after a
+     * burst of price changes converges on the latest price.
      */
     public RenderOutcome renderAll(long tenantId, long productId,
             @Nullable List<String> variantKeys, int frameCandidate, boolean priceOnly,
@@ -147,16 +154,129 @@ public class AdRenderService {
                 ? allVariants() : parse(variantKeys);
         List<String> rendered = new ArrayList<>();
         Map<String, String> skipped = new LinkedHashMap<>();
+        // one base per hook for the whole run: the three sizes share it (the demo
+        // base costs a V1 download plus three ffmpeg extractions)
+        Map<AdHook, BaseImage> bases = new EnumMap<>(AdHook.class);
+        Map<AdHook, ApiException> baseFailures = new EnumMap<>(AdHook.class);
         for (AdVariant target : targets) {
             try {
-                renderVariant(tenantId, product, target, frameCandidate, factVersion, warranty,
-                        price, autoApproveFrom);
+                Long baseline = null;
+                if (priceOnly) {
+                    if (isUpToDate(tenantId, productId, target.variant(), price)) {
+                        skipped.put(target.variant(), "UP_TO_DATE");
+                        continue;
+                    }
+                    baseline = staleOutdatedPrices(tenantId, productId, target.variant(), price,
+                            autoApproveFrom == null ? null : autoApproveFrom.get(target.variant()));
+                }
+                BaseImage base = baseFor(tenantId, productId, target.hook(), frameCandidate,
+                        bases, baseFailures);
+                renderVariant(tenantId, product, target, base, frameCandidate, factVersion,
+                        warranty, price, baseline);
                 rendered.add(target.variant());
             } catch (ApiException ex) {
                 skipped.put(target.variant(), ex.getCode());
             }
         }
         return new RenderOutcome(List.copyOf(rendered), Map.copyOf(skipped));
+    }
+
+    private BaseImage baseFor(long tenantId, long productId, AdHook hook, int frameCandidate,
+            Map<AdHook, BaseImage> bases, Map<AdHook, ApiException> failures) {
+        ApiException failure = failures.get(hook);
+        if (failure != null) {
+            throw failure;
+        }
+        BaseImage cached = bases.get(hook);
+        if (cached != null) {
+            return cached;
+        }
+        try {
+            BaseImage base = baseSelector.select(tenantId, productId, hook, frameCandidate);
+            bases.put(hook, base);
+            return base;
+        } catch (ApiException ex) {
+            failures.put(hook, ex);
+            throw ex;
+        }
+    }
+
+    /**
+     * Price-only re-render guard: the variant's latest version already shows the
+     * current price (a follow-up task after a burst of price changes) - nothing
+     * to do.
+     */
+    private boolean isUpToDate(long tenantId, long productId, String variant, PriceDisplay price) {
+        AssetEntity latest = assetMapper.selectOne(Wrappers.<AssetEntity>lambdaQuery()
+                .eq(AssetEntity::getTenantId, tenantId)
+                .eq(AssetEntity::getProductId, productId)
+                .eq(AssetEntity::getSpecCode, "AD_STATIC")
+                .eq(AssetEntity::getVariant, variant)
+                .orderByDesc(AssetEntity::getVersion)
+                .last("limit 1"));
+        return latest != null && Boolean.TRUE.equals(latest.getDependsOnPrice())
+                && List.of(AssetStatus.APPROVED.name(), AssetStatus.IN_REVIEW.name(),
+                        AssetStatus.PUBLISHED.name()).contains(latest.getStatus())
+                && showsPrice(latest, price);
+    }
+
+    /**
+     * Marks every APPROVED/PUBLISHED price-dependent version of the variant that
+     * shows another price STALE (a version auto-approved by an earlier re-render
+     * may already be outdated again) and returns the auto-approval baseline: the
+     * newest STALE version, or the listener's id when that is newer.
+     */
+    private @Nullable Long staleOutdatedPrices(long tenantId, long productId, String variant,
+            PriceDisplay price, @Nullable Long listenerBaseline) {
+        List<AssetEntity> versions = assetMapper.selectList(Wrappers.<AssetEntity>lambdaQuery()
+                .eq(AssetEntity::getTenantId, tenantId)
+                .eq(AssetEntity::getProductId, productId)
+                .eq(AssetEntity::getSpecCode, "AD_STATIC")
+                .eq(AssetEntity::getVariant, variant)
+                .orderByDesc(AssetEntity::getVersion));
+        AssetEntity newestStale = null;
+        for (AssetEntity version : versions) {
+            boolean live = AssetStatus.APPROVED.name().equals(version.getStatus())
+                    || AssetStatus.PUBLISHED.name().equals(version.getStatus());
+            if (live && Boolean.TRUE.equals(version.getDependsOnPrice())
+                    && !showsPrice(version, price)) {
+                version.setStatus(AssetStatus.STALE.name());
+                assetMapper.updateById(version);
+            }
+            if (newestStale == null && AssetStatus.STALE.name().equals(version.getStatus())) {
+                newestStale = version;
+            }
+        }
+        if (listenerBaseline == null) {
+            return newestStale == null ? null : newestStale.getId();
+        }
+        if (newestStale == null) {
+            return listenerBaseline;
+        }
+        AssetEntity listenerAsset = assetMapper.selectById(listenerBaseline);
+        return listenerAsset != null && listenerAsset.getVersion() > newestStale.getVersion()
+                ? listenerBaseline : newestStale.getId();
+    }
+
+    /** Whether the asset was rendered with exactly this price, strike and end label. */
+    private boolean showsPrice(AssetEntity asset, PriceDisplay price) {
+        JsonNode rendered = asset.getProvenanceJson() == null ? null
+                : readProvenance(asset).path("price");
+        if (rendered == null) {
+            rendered = objectMapper.nullNode();
+        }
+        if (!rendered.isObject()) {
+            return asset.getPriceSnapshot() != null
+                    && asset.getPriceSnapshot().compareTo(price.snapshot()) == 0;
+        }
+        return Objects.equals(textOrNull(rendered, "current"), price.current())
+                && Objects.equals(textOrNull(rendered, "strike"), price.strike())
+                && Objects.equals(textOrNull(rendered, "endsLabel"), price.endsLabel());
+    }
+
+    private static @Nullable String textOrNull(JsonNode node, String field) {
+        JsonNode value = node.path(field);
+        return value.isTextual() ? value.asText() : null;
     }
 
     /** Every C4a precondition in one 409 AD_PRECONDITIONS listing what is missing. */
@@ -176,10 +296,10 @@ public class AdRenderService {
                 missing.add("AD_COPY:" + hook.wire());
             }
         }
-        if (latestApproved(tenantId, productId, "PAGE_MAIN").isEmpty()) {
+        if (baseSelector.eligibleBases(tenantId, productId, "PAGE_MAIN").isEmpty()) {
             missing.add("PAGE_MAIN");
         }
-        if (approved(tenantId, productId, "PAGE_SCENE").isEmpty()) {
+        if (baseSelector.eligibleBases(tenantId, productId, "PAGE_SCENE").isEmpty()) {
             missing.add("PAGE_SCENE");
         }
         if (!hasAcceptedV1(tenantId, productId)) {
@@ -202,8 +322,8 @@ public class AdRenderService {
     }
 
     private void renderVariant(long tenantId, ProductView product, AdVariant target,
-            int frameCandidate, int factVersion, @Nullable String warranty, PriceDisplay price,
-            @Nullable Map<String, Long> autoApproveFrom) {
+            BaseImage base, int frameCandidate, int factVersion, @Nullable String warranty,
+            PriceDisplay price, @Nullable Long autoApproveBaseline) {
         AdHook hook = target.hook();
         AdSize size = target.size();
         String code = templateCode(hook);
@@ -212,26 +332,27 @@ public class AdRenderService {
                         "No approved AD_COPY asset for hook " + hook.wire(),
                         Map.of("hook", hook.wire())));
         AdCopyText copy = AdCopyText.fromJson(adCopy.getTextBody());
-        BaseImage base = baseSelector.select(tenantId, product.id(), hook, frameCandidate);
         Map<PolicySection, String> badges = hook == AdHook.TRUST
                 ? policyService.requireAdBadges(tenantId) : null;
 
-        // Safe area: full font first, then two shrinking steps, else flag.
-        double scale = 1.0;
-        Map<String, Object> model = modelBuilder.build(product, hook, size, base, copy, price,
-                badges, warranty, scale);
-        if (size == AdSize.S9X16 && !withinSafeArea(tenantId, code, model, size)) {
-            scale = 0.9;
+        // Safe area (9:16 only): full font first, then two shrinking steps, else
+        // flag. Each step probes once; the last probe's verdict is reused.
+        double[] scales = size == AdSize.S9X16 ? FONT_SCALES : new double[] {1.0};
+        Map<String, Object> model = null;
+        boolean inside = true;
+        for (double scale : scales) {
             model = modelBuilder.build(product, hook, size, base, copy, price, badges, warranty,
                     scale);
-            if (!withinSafeArea(tenantId, code, model, size)) {
-                scale = 0.8;
-                model = modelBuilder.build(product, hook, size, base, copy, price, badges,
-                        warranty, scale);
+            if (size != AdSize.S9X16) {
+                break;
+            }
+            inside = withinSafeArea(tenantId, code, model, size);
+            if (inside) {
+                break;
             }
         }
         List<PrecheckFlag> flags = new ArrayList<>();
-        if (size == AdSize.S9X16 && !withinSafeArea(tenantId, code, model, size)) {
+        if (!inside) {
             flags.add(PrecheckFlag.TEXT_OUTSIDE_SAFE_AREA);
         }
         byte[] png = renderer.render(tenantId, code, model, size.width(), size.height());
@@ -243,6 +364,10 @@ public class AdRenderService {
         provenance.put("baseAssetId", base.assetId());
         provenance.put("sourceMediaId", base.sourceMediaId());
         provenance.put("frameTime", base.frameTime());
+        if (hook == AdHook.DEMO) {
+            // regenerate advances from this without re-extracting frames
+            provenance.put("frameCandidate", frameCandidate);
+        }
         Map<String, Object> priceInfo = new LinkedHashMap<>();
         priceInfo.put("current", price.current());
         priceInfo.put("strike", price.strike());
@@ -264,8 +389,7 @@ public class AdRenderService {
                             "flags", flags.stream().map(Enum::name).toList(),
                             "metrics", Map.of()))));
         }
-        maybeAutoApprove(tenantId, product.id(), target, view.id(), provenance, price,
-                autoApproveFrom);
+        maybeAutoApprove(tenantId, target, view.id(), provenance, price, autoApproveBaseline);
     }
 
     /**
@@ -275,13 +399,8 @@ public class AdRenderService {
      * media and frame time - and that template version is still APPROVED. In
      * every other case the new version stays IN_REVIEW for a human.
      */
-    private void maybeAutoApprove(long tenantId, long productId, AdVariant target, long newAssetId,
-            Map<String, Object> provenance, PriceDisplay price,
-            @Nullable Map<String, Long> autoApproveFrom) {
-        if (autoApproveFrom == null) {
-            return;
-        }
-        Long oldId = autoApproveFrom.get(target.variant());
+    private void maybeAutoApprove(long tenantId, AdVariant target, long newAssetId,
+            Map<String, Object> provenance, PriceDisplay price, @Nullable Long oldId) {
         if (oldId == null) {
             return;
         }
@@ -405,26 +524,6 @@ public class AdRenderService {
                 .orderByDesc(AssetEntity::getVersion)
                 .last("limit 1"));
         return rows.isEmpty() ? Optional.empty() : Optional.of(rows.get(0));
-    }
-
-    private Optional<AssetEntity> latestApproved(long tenantId, long productId, String specCode) {
-        List<AssetEntity> rows = assetMapper.selectList(Wrappers.<AssetEntity>lambdaQuery()
-                .eq(AssetEntity::getTenantId, tenantId)
-                .eq(AssetEntity::getProductId, productId)
-                .eq(AssetEntity::getSpecCode, specCode)
-                .eq(AssetEntity::getStatus, AssetStatus.APPROVED.name())
-                .orderByDesc(AssetEntity::getVersion)
-                .last("limit 1"));
-        return rows.isEmpty() ? Optional.empty() : Optional.of(rows.get(0));
-    }
-
-    private List<AssetEntity> approved(long tenantId, long productId, String specCode) {
-        return assetMapper.selectList(Wrappers.<AssetEntity>lambdaQuery()
-                .eq(AssetEntity::getTenantId, tenantId)
-                .eq(AssetEntity::getProductId, productId)
-                .eq(AssetEntity::getSpecCode, specCode)
-                .eq(AssetEntity::getStatus, AssetStatus.APPROVED.name())
-                .orderByDesc(AssetEntity::getVersion));
     }
 
     private boolean hasAcceptedV1(long tenantId, long productId) {

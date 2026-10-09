@@ -164,18 +164,48 @@ class AdPriceListenerTest {
     }
 
     @Test
-    void onlyLatestVersionPerVariant_isMarked() {
+    void olderApprovedVersion_behindRejectedLatest_isStaled_andSeedsAutoApprove() {
         long v1 = priceAsset("pricehook-1080x1080", 1, AssetStatus.APPROVED.name());
         long v2 = priceAsset("pricehook-1080x1080", 2, AssetStatus.REJECTED.name());
         publishPriceChange();
 
-        // the latest (REJECTED) version is left as-is; v1 stays APPROVED
+        // v1 carries the old price: leaving it APPROVED would let export ship it
         assertThat(status(v2)).isEqualTo(AssetStatus.REJECTED.name());
-        assertThat(status(v1)).isEqualTo(AssetStatus.APPROVED.name());
-        // the variant is still re-rendered without an auto-approval target
+        assertThat(status(v1)).isEqualTo(AssetStatus.STALE.name());
         JsonNode task = latestRenderTask();
         assertThat(task.path("variants").toString()).contains("pricehook-1080x1080");
-        assertThat(task.has("autoApproveFrom")).isFalse();
+        assertThat(task.path("autoApproveFrom").path("pricehook-1080x1080").asLong())
+                .isEqualTo(v1);
+    }
+
+    @Test
+    void everyApprovedVersionOfAVariant_isStaled_newestSeedsAutoApprove() {
+        long v1 = priceAsset("pricehook-1080x1080", 1, AssetStatus.APPROVED.name());
+        long v2 = priceAsset("pricehook-1080x1080", 2, AssetStatus.APPROVED.name());
+        publishPriceChange();
+
+        assertThat(status(v1)).isEqualTo(AssetStatus.STALE.name());
+        assertThat(status(v2)).isEqualTo(AssetStatus.STALE.name());
+        assertThat(latestRenderTask().path("autoApproveFrom")
+                .path("pricehook-1080x1080").asLong()).isEqualTo(v2);
+    }
+
+    @Test
+    void priceChangeWhileRenderRunning_enqueuesOneFollowUp() {
+        priceAsset("pricehook-1080x1080", 1, AssetStatus.APPROVED.name());
+        publishPriceChange();
+        // the first re-render is running and has already read the old price
+        jdbcTemplate.update("update platform_task set status = 'RUNNING' "
+                + "where tenant_id = ? and type = 'AD_RENDER'", tenantId);
+
+        publishPriceChange();
+        publishPriceChange();
+
+        List<String> statuses = jdbcTemplate.queryForList(
+                "select status from platform_task where tenant_id = ? and type = 'AD_RENDER' "
+                        + "order by id", String.class, tenantId);
+        assertThat(statuses).containsExactly("RUNNING", "QUEUED");
+        assertThat(latestRenderTask().path("priceOnly").asBoolean()).isTrue();
     }
 
     // ---- helpers ----

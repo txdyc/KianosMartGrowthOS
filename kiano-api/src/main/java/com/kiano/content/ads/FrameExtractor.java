@@ -11,6 +11,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.TimeUnit;
 import javax.imageio.ImageIO;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -59,25 +61,37 @@ public class FrameExtractor {
         return frames;
     }
 
-    /** One frame at {@code time}; null when ffmpeg fails or writes nothing. */
+    /**
+     * One frame at {@code time}; null when ffmpeg cannot start, fails, writes
+     * nothing or exceeds {@code kiano.media.ffmpeg-timeout} (then it is killed).
+     * Output is discarded rather than piped so the timed wait cannot block on a
+     * full pipe.
+     */
     private byte[] extract(Path video, double time) {
         Path out = null;
+        Process process = null;
         try {
             out = Files.createTempFile("ad-frame", ".jpg");
-            Process process = new ProcessBuilder(properties.getFfmpegPath(), "-v", "error",
-                    "-ss", String.valueOf(time), "-i", video.toString(), "-frames:v", "1",
-                    "-q:v", "2", "-y", out.toString())
+            process = new ProcessBuilder(properties.getFfmpegPath(), "-v", "error",
+                    "-ss", String.format(Locale.ROOT, "%.3f", time), "-i", video.toString(),
+                    "-frames:v", "1", "-q:v", "2", "-y", out.toString())
                     .redirectErrorStream(true)
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                     .start();
-            try (InputStream stream = process.getInputStream()) {
-                byte[] sink = stream.readAllBytes(); // drain stderr so the pipe never blocks
+            if (!process.waitFor(properties.getFfmpegTimeout().toMillis(), TimeUnit.MILLISECONDS)) {
+                process.destroyForcibly();
+                return null;
             }
-            int exit = process.waitFor();
-            if (exit != 0 || Files.size(out) == 0) {
+            if (process.exitValue() != 0 || Files.size(out) == 0) {
                 return null;
             }
             return Files.readAllBytes(out);
-        } catch (IOException | InterruptedException ex) {
+        } catch (IOException ex) {
+            return null; // ffmpeg missing or unreadable output: skip this frame
+        } catch (InterruptedException ex) {
+            if (process != null) {
+                process.destroyForcibly();
+            }
             Thread.currentThread().interrupt();
             return null;
         } finally {

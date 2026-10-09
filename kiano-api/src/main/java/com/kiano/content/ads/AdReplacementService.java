@@ -19,16 +19,17 @@ import tools.jackson.databind.ObjectMapper;
  * The "assets to swap in the ad platform" list: old versions are statics that
  * were shipped in an APPLIED ad export and have since gone STALE (the price
  * changed); the replacement is the same variant's latest APPROVED version. A
- * SKU only appears once the latest version is APPROVED again - until then the
- * replacement is still pending review.
+ * row only appears once that replacement is APPROVED (until then it is still
+ * pending review) and disappears once the replacement itself has been shipped
+ * in an APPLIED export (the swap is done).
  */
 @Service
 public class AdReplacementService {
 
-    /** One swap: the exported file and its replacement. */
-    public record Replacement(long productId, String sku, String variant,
+    /** One swap: the exported file and its approved replacement. */
+    public record Replacement(long productId, @Nullable String sku, String variant,
             String oldFileName, long oldAssetId,
-            @Nullable String newFileName, @Nullable Long newAssetId, String newStatus) {
+            String newFileName, long newAssetId, String newStatus) {
     }
 
     private final PublicationMapper publicationMapper;
@@ -53,6 +54,7 @@ public class AdReplacementService {
             }
         }
         List<Replacement> replacements = new ArrayList<>();
+        Map<Long, String> skus = new LinkedHashMap<>();
         for (Map.Entry<Long, AssetEntity> entry : exported.entrySet()) {
             AssetEntity old = entry.getValue();
             if (old == null || !AssetStatus.STALE.name().equals(old.getStatus())) {
@@ -60,13 +62,17 @@ public class AdReplacementService {
             }
             AssetEntity replacement = latestApprovedStatic(old.getTenantId(),
                     old.getProductId(), old.getVariant()).orElse(null);
-            String sku = productCatalog.findById(old.getTenantId(), old.getProductId())
-                    .map(p -> p.sku()).orElse(null);
+            // nothing to swap in until the new version is approved, and nothing
+            // left to do once that version has itself been exported
+            if (replacement == null || exported.containsKey(replacement.getId())) {
+                continue;
+            }
+            String sku = skus.computeIfAbsent(old.getProductId(),
+                    id -> productCatalog.findById(old.getTenantId(), id)
+                            .map(p -> p.sku()).orElse(null));
             replacements.add(new Replacement(old.getProductId(), sku, old.getVariant(),
-                    old.getFileName(), old.getId(),
-                    replacement == null ? null : replacement.getFileName(),
-                    replacement == null ? null : replacement.getId(),
-                    replacement == null ? null : replacement.getStatus()));
+                    old.getFileName(), old.getId(), replacement.getFileName(),
+                    replacement.getId(), replacement.getStatus()));
         }
         return replacements;
     }

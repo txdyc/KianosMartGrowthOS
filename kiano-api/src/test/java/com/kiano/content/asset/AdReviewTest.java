@@ -2,9 +2,7 @@ package com.kiano.content.asset;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyDouble;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.kiano.TestcontainersConfiguration;
 import com.kiano.content.ads.AdCopyText;
@@ -22,7 +20,6 @@ import com.kiano.platform.web.ApiException;
 import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -168,19 +165,31 @@ class AdReviewTest {
     }
 
     @Test
-    void regenerateDemoStatic_advancesToNextFrame() throws Exception {
+    void regenerateDemoStatic_advancesFrameCandidateFromProvenance_withoutVideoWork() {
         long video = videoAsset();
-        when(frameExtractor.candidates(any(Path.class), anyDouble())).thenReturn(List.of(
-                new FrameExtractor.Frame(0, 1.5, 15.0, new byte[0]),
-                new FrameExtractor.Frame(1, 3.0, 9.0, new byte[0]),
-                new FrameExtractor.Frame(2, 4.5, 6.0, new byte[0])));
         long demo = asset("AD_STATIC", "demo-1080x1080", "IMAGE", "IN_REVIEW",
                 "{\"template\":{\"code\":\"AD_DEMO\",\"version\":1},"
-                        + "\"sourceMediaId\":" + video + ",\"frameTime\":3.0}", null);
+                        + "\"sourceMediaId\":" + video + ",\"frameTime\":3.0,"
+                        + "\"frameCandidate\":1}", null);
 
         service.decide(user, demo, Decision.REGENERATE, List.of(), null);
 
         assertThat(taskPayload("AD_RENDER").path("frameCandidate").asInt()).isEqualTo(2);
+        // no V1 download or ffmpeg inside the review transaction
+        verifyNoInteractions(frameExtractor);
+    }
+
+    @Test
+    void regenerateLegacyDemoStatic_withoutRecordedCandidate_usesSecondFrame() {
+        long video = videoAsset();
+        long demo = asset("AD_STATIC", "demo-1080x1080", "IMAGE", "IN_REVIEW",
+                "{\"template\":{\"code\":\"AD_DEMO\",\"version\":1},"
+                        + "\"sourceMediaId\":" + video + ",\"frameTime\":1.5}", null);
+
+        service.decide(user, demo, Decision.REGENERATE, List.of(), null);
+
+        assertThat(taskPayload("AD_RENDER").path("frameCandidate").asInt()).isEqualTo(1);
+        verifyNoInteractions(frameExtractor);
     }
 
     @Test

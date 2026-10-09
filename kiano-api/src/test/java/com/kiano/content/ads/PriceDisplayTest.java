@@ -77,6 +77,32 @@ class PriceDisplayTest {
     }
 
     @Test
+    void scheduledSaleNotStartedYet_noStrike() {
+        // sale_price and dates are set ahead, but Woo still reports price == regular
+        ProductView scheduled = new ProductView(1L, null, "simple", "MG-BL200", "Blender",
+                new BigDecimal("299"), new BigDecimal("249"), new BigDecimal("299"), 10,
+                "instock", "publish", null, List.of(),
+                NOW.plusSeconds(2L * 24 * 3600), NOW.plusSeconds(9L * 24 * 3600));
+
+        PriceDisplay display = PriceDisplay.of(scheduled, NOW);
+
+        assertThat(display.current()).isEqualTo("GH₵ 299");
+        assertThat(display.strike()).isNull();
+        assertThat(display.endsLabel()).isNull();
+    }
+
+    @Test
+    void saleWindowOpenButCurrentPriceNotLowered_noStrike() {
+        // dates say the sale is on, but the price Woo charges is still the regular one
+        ProductView stale = new ProductView(1L, null, "simple", "MG-BL200", "Blender",
+                new BigDecimal("299"), new BigDecimal("249"), new BigDecimal("299"), 10,
+                "instock", "publish", null, List.of(),
+                NOW.minusSeconds(3600), NOW.plusSeconds(3600));
+
+        assertThat(PriceDisplay.of(stale, NOW).strike()).isNull();
+    }
+
+    @Test
     void fallsBackToRegular_whenPriceNull() {
         PriceDisplay display = PriceDisplay.of(product(
                 new BigDecimal("299"), null, new BigDecimal("299"), null), NOW);
