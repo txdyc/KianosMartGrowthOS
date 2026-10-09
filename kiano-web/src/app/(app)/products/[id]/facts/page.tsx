@@ -4,48 +4,18 @@ import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { apiFetch, ApiError } from "@/lib/api";
 import { errorText, useI18n } from "@/i18n";
-import type { TFunction } from "@/i18n";
+import { FactsFields } from "@/components/FactsFields";
 import { FactsPanel } from "@/components/FactsPanel";
 import {
+  cloneFacts,
+  emptyFacts,
   listFieldToText,
   missingConfirmations,
   REQUIRED_CONFIRMATIONS,
   textToListField,
 } from "@/lib/facts";
-import type {
-  FactSheetResponse,
-  FactSheetView,
-  FactsJson,
-} from "@/lib/types";
-
-type ListField = "inBox" | "features" | "benefits";
-type ScalarField =
-  | "model"
-  | "category"
-  | "capacity"
-  | "powerW"
-  | "voltage"
-  | "material"
-  | "colour"
-  | "warranty";
-
-/** Default empty facts (all null) matches the backend contract for a new draft. */
-function emptyFacts(): FactsJson {
-  return {
-    model: null,
-    category: null,
-    capacity: null,
-    powerW: null,
-    voltage: null,
-    material: null,
-    colour: null,
-    warranty: null,
-    inBox: null,
-    features: null,
-    benefits: null,
-    forbiddenClaims: null,
-  };
-}
+import type { ListField, ScalarField } from "@/lib/facts";
+import type { FactSheetResponse, FactSheetView, FactsJson } from "@/lib/types";
 
 export default function FactsPage({ params }: PageProps<"/products/[id]/facts">) {
   const { id } = use(params);
@@ -200,41 +170,13 @@ export default function FactsPage({ params }: PageProps<"/products/[id]/facts">)
           }}
         >
           <h2 className="text-lg font-semibold">{t("facts.formTitle")}</h2>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {(Object.keys(fields()).filter((f) => f !== "inBox") as ScalarField[]).map((field) => (
-              <FieldRow
-                key={field}
-                label={t(`facts.field.${field}`)}
-                source={sourceFor(data, field)}
-                disabled={isLocked}
-              >
-                <input
-                  type={field === "powerW" ? "number" : "text"}
-                  className={inputClass}
-                  value={String(form[field] ?? "")}
-                  disabled={isLocked}
-                  onChange={(e) => setScalar(field, e.target.value)}
-                />
-              </FieldRow>
-            ))}
-          </div>
-
-          {(["inBox", "features", "benefits"] as ListField[]).map((field) => (
-            <FieldRow
-              key={field}
-              label={t(`facts.field.${field}`)}
-              source={sourceFor(data, field)}
-              disabled={isLocked}
-            >
-              <textarea
-                className={inputClass}
-                rows={3}
-                value={listFieldToText(form[field])}
-                disabled={isLocked}
-                onChange={(e) => setList(field, e.target.value)}
-              />
-            </FieldRow>
-          ))}
+          <FactsFields
+            facts={form}
+            fieldSources={(data.current ?? data.locked)?.fieldSources}
+            disabled={isLocked}
+            onScalar={(field, value) => setScalar(field, value)}
+            onList={(field, text) => setList(field, text)}
+          />
 
           <div className="flex flex-wrap items-center gap-3">
             <button
@@ -340,50 +282,6 @@ export default function FactsPage({ params }: PageProps<"/products/[id]/facts">)
   );
 }
 
-function cloneFacts(facts: FactsJson): FactsJson {
-  return {
-    ...facts,
-    inBox: facts.inBox ? [...facts.inBox] : null,
-    features: facts.features ? [...facts.features] : null,
-    benefits: facts.benefits ? [...facts.benefits] : null,
-    forbiddenClaims: facts.forbiddenClaims ? [...facts.forbiddenClaims] : null,
-  };
-}
-
-function fields(): Record<string, string> {
-  return {
-    model: "",
-    category: "",
-    capacity: "",
-    powerW: "",
-    voltage: "",
-    material: "",
-    colour: "",
-    warranty: "",
-    inBox: "",
-    features: "",
-    benefits: "",
-  };
-}
-
-function sourceFor(data: FactSheetResponse, field: string): string {
-  const sheet = data.current ?? data.locked;
-  const source = sheet?.fieldSources?.[field];
-  return source ?? "NONE";
-}
-
-const SOURCE_LABEL_KEYS: Record<string, "facts.source.P5" | "facts.source.PROMO" | "facts.source.WOO_TEXT" | "facts.source.MANUAL" | "facts.source.NONE"> = {
-  P5: "facts.source.P5",
-  PROMO: "facts.source.PROMO",
-  WOO_TEXT: "facts.source.WOO_TEXT",
-  MANUAL: "facts.source.MANUAL",
-  NONE: "facts.source.NONE",
-};
-
-function sourceLabel(source: string, t: TFunction): string {
-  return t(SOURCE_LABEL_KEYS[source] ?? "facts.source.NONE");
-}
-
 function BackLink({ children }: { children: React.ReactNode }) {
   return (
     <Link
@@ -395,9 +293,6 @@ function BackLink({ children }: { children: React.ReactNode }) {
   );
 }
 
-const inputClass =
-  "w-full rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950 disabled:opacity-60";
-
 const primaryClass = (disabled: boolean) =>
   `rounded-md px-3 py-1.5 text-sm font-medium ${
     disabled
@@ -407,37 +302,3 @@ const primaryClass = (disabled: boolean) =>
 
 const secondaryClass =
   "rounded-md border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700";
-
-/** One labelled input plus its provenance badge. */
-function FieldRow({
-  label,
-  source,
-  disabled,
-  children,
-}: {
-  label: string;
-  source: string;
-  disabled: boolean;
-  children: React.ReactNode;
-}) {
-  const { t } = useI18n();
-  return (
-    <div className="flex flex-col gap-1">
-      <div className="flex items-center justify-between">
-        <label className="text-sm font-medium">{label}</label>
-        {!disabled ? (
-          <span
-            className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-              source === "MANUAL"
-                ? "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300"
-                : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
-            }`}
-          >
-            {sourceLabel(source, t)}
-          </span>
-        ) : null}
-      </div>
-      {children}
-    </div>
-  );
-}

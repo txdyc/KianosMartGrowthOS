@@ -674,6 +674,33 @@ export const en = {
   "batch.detail.productionQueued": "Queued: {n}",
   "batch.detail.productionRejected": "Rejected: {n}",
   "batch.detail.loading": "Loading…",
+  // workbenches
+  "batch.station.elapsed": "This SKU: {duration}",
+  "batch.station.average": "Batch average: {duration}",
+  "batch.station.target": "target {n}s",
+  "batch.station.remaining": "{n} SKUs left",
+  "batch.facts.stationTitle": "Fact confirmation",
+  "batch.facts.confirmLock": "Confirm all and lock",
+  "batch.facts.skip": "Skip SKU",
+  "batch.facts.locked": "Locked. Loading the next SKU…",
+  "batch.facts.done": "The fact queue is empty.",
+  "batch.facts.help":
+    "Enter: confirm all and lock · J/K: field · E: edit field · S: skip · ?: help",
+  "batch.facts.sources": "Source images",
+  "batch.facts.noImage": "No source image",
+  "batch.facts.field": "Field {current}/{total}",
+  "batch.review.stationTitle": "Asset review",
+  "batch.review.done": "The review queue is empty.",
+  "batch.review.help":
+    "←/→: asset · Space: approve · X: reject · G: regenerate · A: approve remaining · N: next SKU · ?: help",
+  "batch.review.approve": "Approve",
+  "batch.review.reject": "Reject",
+  "batch.review.regenerate": "Regenerate",
+  "batch.review.approveRemaining": "Approve remaining",
+  "batch.review.next": "Next SKU",
+  "batch.review.rejectPick": "Pick a reason (1–7)",
+  "batch.review.asset": "Asset {current}/{total}",
+  "batch.review.flags": "{n} precheck flags",
 } as const;
 
 export type MessageKey = keyof typeof en;

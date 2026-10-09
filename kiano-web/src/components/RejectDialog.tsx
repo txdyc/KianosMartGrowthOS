@@ -3,17 +3,8 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { useI18n } from "@/i18n";
+import { REJECT_REASONS } from "@/lib/keys";
 import type { RejectReason } from "@/lib/types";
-
-const REASONS: RejectReason[] = [
-  "PRODUCT_MISMATCH",
-  "AI_ARTIFACT",
-  "WRONG_FACT",
-  "TEXT_ERROR",
-  "STYLE",
-  "LOW_QUALITY",
-  "POLICY",
-];
 
 /**
  * Modal behind the R shortcut: pick at least one reject reason and an
@@ -71,7 +62,7 @@ export function RejectDialog({
           <legend className="text-sm text-zinc-600 dark:text-zinc-400">
             {t("review.rejectReasons")}
           </legend>
-          {REASONS.map((reason, index) => (
+          {REJECT_REASONS.map((reason, index) => (
             <label key={reason} className="flex items-center gap-2 text-sm text-zinc-800 dark:text-zinc-200">
               <input
                 type="checkbox"
