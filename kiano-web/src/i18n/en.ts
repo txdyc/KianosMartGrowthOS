@@ -365,6 +365,7 @@ export const en = {
   "ads.approved": "Approved",
   "ads.missing": "No copy yet",
   "ads.preconditions": "Render blocked — fix these first:",
+  "ads.renderIssues": "The last render skipped these images:",
   "ads.exportTitle": "Ad exports",
   "ads.selectHero": "Select HERO products to export",
   "ads.export": "Export",
@@ -464,6 +465,7 @@ export const en = {
   "error.PRICE_MISSING": "The product has no price to show on the ad.",
   "error.NOTHING_TO_EXPORT": "No HERO products are ready to export.",
   "error.AD_COPY_MISSING": "Generate ad copy for every hook first.",
+  "error.TEMPLATE_NOT_FOUND": "No approved template is available for this ad.",
   "error.AD_COPY_INVALID": "The ad copy is invalid; check the three fields.",
 } as const;
 

@@ -367,6 +367,7 @@ export const zh: Record<MessageKey, string> = {
   "ads.approved": "已通过",
   "ads.missing": "暂无文案",
   "ads.preconditions": "渲染被阻塞，请先处理以下问题：",
+  "ads.renderIssues": "上次渲染跳过了以下图片：",
   "ads.exportTitle": "广告导出",
   "ads.selectHero": "选择要导出的 HERO 商品",
   "ads.export": "导出",
@@ -465,5 +466,6 @@ export const zh: Record<MessageKey, string> = {
   "error.PRICE_MISSING": "该商品没有可用于广告展示的价格。",
   "error.NOTHING_TO_EXPORT": "没有可导出的 HERO 商品。",
   "error.AD_COPY_MISSING": "请先生成每个 hook 的广告文案。",
+  "error.TEMPLATE_NOT_FOUND": "该广告没有可用的已通过模板。",
   "error.AD_COPY_INVALID": "广告文案无效，请检查三个字段。",
 };

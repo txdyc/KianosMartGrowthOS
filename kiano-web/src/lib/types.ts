@@ -238,7 +238,7 @@ export interface AdReplacement {
   oldAssetId: number;
   newFileName: string;
   newAssetId: number;
-  newStatus: AssetStatus | null;
+  newStatus: AssetStatus;
 }
 
 /**
@@ -378,4 +378,14 @@ export interface LlmSettingsView {
   providers: ProviderView[];
   routes: RouteView[];
   presets: Preset[];
+}
+
+/** GET /api/v1/content/products/{id}/ads/render-status (204 = no render yet). */
+export interface AdRenderStatus {
+  status: "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED";
+  rendered: string[];
+  /** variant → error code; UP_TO_DATE means the price-only re-render had nothing to do. */
+  skipped: Record<string, string>;
+  lastError: string | null;
+  finishedAt?: string | null;
 }

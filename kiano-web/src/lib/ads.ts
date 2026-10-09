@@ -1,4 +1,4 @@
-import type { AdCopyStatus, ReviewItem } from "./types";
+import type { AdCopyStatus, AdRenderStatus, ReviewItem } from "./types";
 
 /**
  * C4a static ad helpers. The armed hooks and the 12-variant grid mirror the
@@ -138,4 +138,47 @@ export function adCopyStatuses(items: ReviewItem[]): AdCopyStatus[] {
 function adRank(item: ReviewItem): number {
   const statusRank = item.status === "APPROVED" ? 2 : item.status === "IN_REVIEW" ? 1 : 0;
   return statusRank * 1_000_000 + item.assetId;
+}
+/**
+ * Approved AD_STATIC variants per product (the n of n/12). Distinct variants,
+ * not rows: an older approved version of a variant must not count twice.
+ */
+export function approvedStaticCounts(rows: ReviewItem[]): Record<number, number> {
+  const variants = new Map<number, Set<string>>();
+  for (const row of rows) {
+    if (row.specCode !== "AD_STATIC" || row.status !== "APPROVED" || row.variant === null) {
+      continue;
+    }
+    const set = variants.get(row.productId) ?? new Set<string>();
+    set.add(row.variant);
+    variants.set(row.productId, set);
+  }
+  const counts: Record<number, number> = {};
+  for (const [productId, set] of variants) {
+    counts[productId] = set.size;
+  }
+  return counts;
+}
+
+/** One problem of the latest render: a skipped variant, or the whole task (variant null). */
+export interface AdRenderIssue {
+  variant: string | null;
+  code: string;
+}
+
+/**
+ * Problems to show after the product's latest AD_RENDER: skipped variants in
+ * export order (UP_TO_DATE is not a problem), or the failed task's error code.
+ */
+export function adRenderIssues(status: AdRenderStatus | null): AdRenderIssue[] {
+  if (status === null) {
+    return [];
+  }
+  if (status.status === "FAILED") {
+    const code = (status.lastError ?? "").split(":")[0].trim() || "INTERNAL_ERROR";
+    return [{ variant: null, code }];
+  }
+  return AD_VARIANTS.filter(
+    (variant) => status.skipped[variant] !== undefined && status.skipped[variant] !== "UP_TO_DATE",
+  ).map((variant) => ({ variant, code: status.skipped[variant] }));
 }

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { errorText, useI18n } from "@/i18n";
+import { approvedStaticCounts } from "@/lib/ads";
 import type { AdExportView, AdReplacement, ContentProductSummary, ReviewItem } from "@/lib/types";
 
 const POLL_MS = 3000;
@@ -39,13 +40,7 @@ export default function AdsPage() {
   const loadCounts = useCallback(() => {
     return apiFetch<ReviewItem[]>("/api/v1/content/assets?kind=IMAGE&status=APPROVED")
       .then((rows) => {
-        const next: Record<number, number> = {};
-        for (const row of rows) {
-          if (row.specCode === "AD_STATIC") {
-            next[row.productId] = (next[row.productId] ?? 0) + 1;
-          }
-        }
-        setCounts(next);
+        setCounts(approvedStaticCounts(rows));
       })
       .catch(() => {});
   }, []);

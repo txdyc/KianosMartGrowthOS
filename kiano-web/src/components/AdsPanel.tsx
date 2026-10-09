@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { errorText, useI18n } from "@/i18n";
 import type { MessageKey } from "@/i18n";
-import { adCopyStatuses, adHookVariants } from "@/lib/ads";
-import type { ContentTier, ReviewItem } from "@/lib/types";
+import { adCopyStatuses, adHookVariants, adRenderIssues } from "@/lib/ads";
+import type { AdRenderStatus, ContentTier, ReviewItem } from "@/lib/types";
 
 const hookTitleKey = (hook: string): MessageKey => `ads.hook.${hook}` as MessageKey;
 
@@ -17,6 +17,8 @@ const PRECOND_LABEL: Record<string, MessageKey> = {
   PRICE_MISSING: "error.PRICE_MISSING",
   DEMO_FRAME_UNAVAILABLE: "error.DEMO_FRAME_UNAVAILABLE",
   AD_BASE_MISSING: "error.AD_BASE_MISSING",
+  AD_COPY_MISSING: "error.AD_COPY_MISSING",
+  TEMPLATE_NOT_FOUND: "error.TEMPLATE_NOT_FOUND",
 };
 
 /**
@@ -29,8 +31,15 @@ export function AdsPanel({ productId, tier }: { productId: number; sku: string; 
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [preconditions, setPreconditions] = useState<string[] | null>(null);
+  const [renderStatus, setRenderStatus] = useState<AdRenderStatus | null>(null);
 
   const load = useCallback(() => {
+    // the latest render outcome is reloaded with the assets so skipped images show
+    void apiFetch<AdRenderStatus | undefined>(
+      `/api/v1/content/products/${productId}/ads/render-status`,
+    )
+      .then((status) => setRenderStatus(status ?? null))
+      .catch(() => setRenderStatus(null));
     return apiFetch<ReviewItem[]>(`/api/v1/content/assets?productId=${productId}`)
       .then(setAssets)
       .catch((err: unknown) => {
@@ -44,6 +53,7 @@ export function AdsPanel({ productId, tier }: { productId: number; sku: string; 
   }, [load]);
 
   const statuses = useMemo(() => adCopyStatuses(assets ?? []), [assets]);
+  const renderIssues = useMemo(() => adRenderIssues(renderStatus), [renderStatus]);
 
   async function generateAll() {
     setBusy("copy-all");
@@ -134,6 +144,22 @@ export function AdsPanel({ productId, tier }: { productId: number; sku: string; 
             {preconditions.map((missing) => (
               <li key={missing} className="font-mono text-xs">
                 {preconditionText(t, missing)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {renderIssues.length > 0 ? (
+        <div className="flex flex-col gap-1 rounded-md border border-amber-300 bg-amber-50 p-2 text-sm dark:border-amber-700/50 dark:bg-amber-900/20">
+          <p className="font-medium text-amber-800 dark:text-amber-300">{t("ads.renderIssues")}</p>
+          <ul className="list-inside list-disc text-amber-700 dark:text-amber-300">
+            {renderIssues.map((issue) => (
+              <li key={`${issue.variant ?? "task"}:${issue.code}`} className="text-xs">
+                {issue.variant !== null ? (
+                  <span className="font-mono">{issue.variant} — </span>
+                ) : null}
+                {preconditionText(t, issue.code)}
               </li>
             ))}
           </ul>

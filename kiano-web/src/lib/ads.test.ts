@@ -8,6 +8,8 @@ import {
   adCopyStatuses,
   adGrid,
   adHookOfAsset,
+  adRenderIssues,
+  approvedStaticCounts,
   parseAdCopy,
   serializeAdCopy,
 } from "./ads";
@@ -174,5 +176,54 @@ describe("adCopyStatuses", () => {
     const statuses = adCopyStatuses(items);
     expect(statuses).toHaveLength(1);
     expect(statuses[0].hook).toBe("pricehook");
+  });
+});
+describe("approvedStaticCounts", () => {
+  function staticAsset(assetId: number, productId: number, variant: string): ReviewItem {
+    return { ...adAsset(assetId, "pricehook", "APPROVED"), productId, specCode: "AD_STATIC", variant };
+  }
+
+  test("counts distinct approved variants, not approved rows", () => {
+    const rows = [
+      staticAsset(1, 7, "pricehook-1080x1080"),
+      // an older approved version of the same variant must not count twice
+      staticAsset(2, 7, "pricehook-1080x1080"),
+      staticAsset(3, 7, "trust-1080x1920"),
+      staticAsset(4, 8, "demo-1080x1350"),
+      { ...adAsset(5, "pricehook", "APPROVED"), productId: 7 }, // AD_COPY ignored
+    ];
+    expect(approvedStaticCounts(rows)).toEqual({ 7: 2, 8: 1 });
+  });
+});
+
+describe("adRenderIssues", () => {
+  test("lists skipped variants except up-to-date ones, in variant order", () => {
+    expect(
+      adRenderIssues({
+        status: "SUCCEEDED",
+        rendered: ["pricehook-1080x1080"],
+        skipped: {
+          "trust-1080x1080": "POLICY_BADGES_MISSING",
+          "demo-1080x1080": "DEMO_FRAME_UNAVAILABLE",
+          "pricehook-1080x1350": "UP_TO_DATE",
+        },
+        lastError: null,
+      }),
+    ).toEqual([
+      { variant: "demo-1080x1080", code: "DEMO_FRAME_UNAVAILABLE" },
+      { variant: "trust-1080x1080", code: "POLICY_BADGES_MISSING" },
+    ]);
+  });
+
+  test("a failed task reports its error code; no status means no issues", () => {
+    expect(
+      adRenderIssues({
+        status: "FAILED",
+        rendered: [],
+        skipped: {},
+        lastError: "TEMPLATE_NOT_FOUND: No approved template for AD_DEMO",
+      }),
+    ).toEqual([{ variant: null, code: "TEMPLATE_NOT_FOUND" }]);
+    expect(adRenderIssues(null)).toEqual([]);
   });
 });
