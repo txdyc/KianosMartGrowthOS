@@ -1,8 +1,10 @@
 package com.kiano.platform.queue;
 
 import java.sql.Types;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
@@ -31,11 +33,23 @@ public class TaskQueue {
      * whole transaction, which would silently undo the caller's other writes.
      */
     public Optional<Long> enqueue(long tenantId, String type, Object payload, String dedupeKey) {
+        return enqueue(tenantId, type, payload, dedupeKey, 0, null);
+    }
+
+    /**
+     * Inserts a task with its lease priority (0 = interactive, higher runs
+     * later) and an optional earliest run time (null = now); returns empty if
+     * an active task with the same dedupe key exists.
+     */
+    public Optional<Long> enqueue(long tenantId, String type, Object payload, String dedupeKey,
+            int priority, @Nullable Instant runAfter) {
         String payloadJson = objectMapper.writeValueAsString(payload == null ? java.util.Map.of() : payload);
         List<Long> ids = jdbcTemplate.queryForList(
-                "insert into platform_task (tenant_id, type, payload, dedupe_key, status) "
-                        + "values (?, ?, ?::jsonb, ?, 'QUEUED') on conflict do nothing returning id",
-                Long.class, tenantId, type, payloadJson, dedupeKey);
+                "insert into platform_task (tenant_id, type, payload, dedupe_key, status, priority, run_after) "
+                        + "values (?, ?, ?::jsonb, ?, 'QUEUED', ?, coalesce(?::timestamptz, now())) "
+                        + "on conflict do nothing returning id",
+                Long.class, tenantId, type, payloadJson, dedupeKey, priority,
+                runAfter == null ? null : java.sql.Timestamp.from(runAfter));
         return ids.isEmpty() ? Optional.empty() : Optional.of(ids.get(0));
     }
 

@@ -46,16 +46,39 @@ public class GenerationJobStore {
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * Lease order of a job (C6): interactive work is priority 0, batch work is
+     * higher and may be restricted to the night window.
+     */
+    public record JobPriority(int priority, @Nullable Long batchId, boolean nightOnly) {
+
+        /** Interactive work: leased before any batch job (the previous behavior). */
+        public static final JobPriority INTERACTIVE = new JobPriority(0, null, false);
+
+        /** Batch work: leased after interactive jobs, optionally night-only. */
+        public static JobPriority batch(long batchId, boolean nightOnly) {
+            return new JobPriority(10, batchId, nightOnly);
+        }
+    }
+
     public long create(long tenantId, long productId, long runId, JobStep step, String variant,
             Object input, List<Long> parentJobIds) {
+        return create(tenantId, productId, runId, step, variant, input, parentJobIds,
+                JobPriority.INTERACTIVE);
+    }
+
+    /** Creates a job with an explicit lease priority (batch work in C6). */
+    public long create(long tenantId, long productId, long runId, JobStep step, String variant,
+            Object input, List<Long> parentJobIds, JobPriority priority) {
         String inputJson = objectMapper.writeValueAsString(input == null ? Map.of() : input);
         List<Long> parents = parentJobIds == null ? List.of() : parentJobIds;
         GeneratedKeyHolder keyHolder = new GeneratedKeyHolder();
         jdbcTemplate.update(con -> {
             PreparedStatement ps = con.prepareStatement(
                     "insert into generation_job (tenant_id, product_id, run_id, step, asset_spec_code, variant, "
-                            + "executor, input_json, parent_job_ids, status, attempts, max_attempts) "
-                            + "values (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, 'QUEUED', 0, 3)",
+                            + "executor, input_json, parent_job_ids, status, attempts, max_attempts, "
+                            + "priority, batch_id, night_only) "
+                            + "values (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, 'QUEUED', 0, 3, ?, ?, ?)",
                     new String[]{"id"});
             ps.setLong(1, tenantId);
             ps.setLong(2, productId);
@@ -66,13 +89,30 @@ public class GenerationJobStore {
             ps.setString(7, step.executor().name());
             ps.setString(8, inputJson);
             ps.setArray(9, con.createArrayOf("bigint", parents.toArray(new Long[0])));
+            ps.setInt(10, priority.priority());
+            if (priority.batchId() == null) {
+                ps.setNull(11, java.sql.Types.BIGINT);
+            } else {
+                ps.setLong(11, priority.batchId());
+            }
+            ps.setBoolean(12, priority.nightOnly());
             return ps;
         }, keyHolder);
         return keyHolder.getKey().longValue();
     }
 
-    /** Atomically claims one QUEUED job for a worker with the given capabilities. */
+    /** Claims a QUEUED job with the night window open (interactive callers). */
     public Optional<GenerationJob> lease(String workerId, Set<ExecutorType> capabilities) {
+        return lease(workerId, capabilities, true);
+    }
+
+    /**
+     * Atomically claims one QUEUED job for a worker with the given capabilities.
+     * {@code nightOpen=false} (daytime) skips batch jobs flagged night-only;
+     * interactive jobs are never restricted.
+     */
+    public Optional<GenerationJob> lease(String workerId, Set<ExecutorType> capabilities,
+            boolean nightOpen) {
         if (capabilities == null || capabilities.isEmpty()) {
             return Optional.empty();
         }
@@ -81,14 +121,16 @@ public class GenerationJobStore {
                 + "lease_expires_at=now() + interval '10 minutes', heartbeat_at=now(), "
                 + "started_at=coalesce(j.started_at, now()) "
                 + "where j.id = (select id from generation_job where status='QUEUED' and run_after <= now() "
-                + "and executor in (" + placeholders + ") order by id for update skip locked limit 1) "
+                + "and executor in (" + placeholders + ") and (night_only = false or ?) "
+                + "order by priority, id for update skip locked limit 1) "
                 + "returning *";
-        Object[] params = new Object[capabilities.size() + 1];
+        Object[] params = new Object[capabilities.size() + 2];
         params[0] = workerId;
         int i = 1;
         for (ExecutorType capability : capabilities) {
             params[i++] = capability.name();
         }
+        params[i] = nightOpen;
         return jdbcTemplate.query(sql, mapper, params).stream().findFirst();
     }
 
@@ -303,7 +345,10 @@ public class GenerationJobStore {
                     gpuSeconds,
                     rs.getString("error"),
                     createdAt == null ? null : createdAt.toInstant(),
-                    finishedAt == null ? null : finishedAt.toInstant());
+                    finishedAt == null ? null : finishedAt.toInstant(),
+                    rs.getInt("priority"),
+                    rs.getObject("batch_id") == null ? null : rs.getLong("batch_id"),
+                    rs.getBoolean("night_only"));
         }
 
         private JsonNode readJson(@Nullable String json) {

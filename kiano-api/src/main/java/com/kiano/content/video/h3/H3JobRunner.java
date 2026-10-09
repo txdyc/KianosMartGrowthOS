@@ -2,6 +2,7 @@ package com.kiano.content.video.h3;
 
 import com.kiano.commerce.ProductCatalog;
 import com.kiano.commerce.ProductView;
+import com.kiano.content.batch.BatchProperties;
 import com.kiano.content.generation.GenerationJob;
 import com.kiano.content.generation.GenerationJobStore;
 import com.kiano.content.generation.JobFailureListener;
@@ -60,12 +61,14 @@ public class H3JobRunner {
     private final H3PromptBuilder promptBuilder;
     private final ProductCatalog products;
     private final AuditLog auditLog;
+    private final BatchProperties batchProperties;
     private final ObjectProvider<H3TerminalHandler> terminalHandler;
     private final ObjectProvider<JobFailureListener> failureListener;
 
     public H3JobRunner(GenerationJobStore jobs, ObjectStorage storage, H3Client client,
             H3Properties properties, H3PromptBuilder promptBuilder, ProductCatalog products,
-            AuditLog auditLog, ObjectProvider<H3TerminalHandler> terminalHandler,
+            AuditLog auditLog, BatchProperties batchProperties,
+            ObjectProvider<H3TerminalHandler> terminalHandler,
             ObjectProvider<JobFailureListener> failureListener) {
         this.jobs = jobs;
         this.storage = storage;
@@ -74,6 +77,7 @@ public class H3JobRunner {
         this.promptBuilder = promptBuilder;
         this.products = products;
         this.auditLog = auditLog;
+        this.batchProperties = batchProperties;
         this.terminalHandler = terminalHandler;
         this.failureListener = failureListener;
     }
@@ -89,7 +93,8 @@ public class H3JobRunner {
     /** One round: leases at most two H3 jobs and advances each of them. */
     public void pollOnce() {
         for (int handled = 0; handled < MAX_JOBS_PER_ROUND; handled++) {
-            Optional<GenerationJob> leased = jobs.lease(LEASE_OWNER, Set.of(ExecutorType.H3));
+            Optional<GenerationJob> leased = jobs.lease(LEASE_OWNER, Set.of(ExecutorType.H3),
+                    batchProperties.nightOpen(java.time.Instant.now()));
             if (leased.isEmpty()) {
                 return;
             }

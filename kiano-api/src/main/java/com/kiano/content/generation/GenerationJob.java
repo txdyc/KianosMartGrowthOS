@@ -4,6 +4,7 @@ import com.kiano.workerprotocol.ExecutorType;
 import com.kiano.workerprotocol.JobStep;
 import java.time.Instant;
 import java.util.List;
+import org.jspecify.annotations.Nullable;
 import tools.jackson.databind.JsonNode;
 
 /**
@@ -29,5 +30,12 @@ public record GenerationJob(
         Double gpuSeconds,
         String error,
         Instant createdAt,
-        Instant finishedAt) {
+        Instant finishedAt,
+        /**
+         * Lease order: 0 = interactive (default), higher = later (batches).
+         * Batch jobs also carry their batch id and the optional night flag.
+         */
+        int priority,
+        @Nullable Long batchId,
+        boolean nightOnly) {
 }

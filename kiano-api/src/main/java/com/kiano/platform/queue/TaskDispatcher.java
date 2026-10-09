@@ -77,7 +77,8 @@ public class TaskDispatcher {
         List<ClaimedTask> rows = jdbcTemplate.query(
                 "update platform_task t set status='RUNNING', attempts=t.attempts+1, locked_by=?, "
                         + "locked_until=?, started_at=? where t.id = (select id from platform_task "
-                        + "where status='QUEUED' and run_after <= now() order by id for update skip locked limit 1) "
+                        + "where status='QUEUED' and run_after <= now() order by priority, id "
+                        + "for update skip locked limit 1) "
                         + "returning id, tenant_id, type, payload, attempts, max_attempts",
                 (rs, rowNum) -> new ClaimedTask(rs.getLong("id"), rs.getLong("tenant_id"),
                         rs.getString("type"), rs.getString("payload"), rs.getInt("attempts"),

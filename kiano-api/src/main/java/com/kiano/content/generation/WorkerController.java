@@ -1,5 +1,6 @@
 package com.kiano.content.generation;
 
+import com.kiano.content.batch.BatchProperties;
 import com.kiano.platform.storage.ObjectStorage;
 import com.kiano.platform.web.ApiException;
 import com.kiano.workerprotocol.CompleteRequest;
@@ -12,6 +13,7 @@ import com.kiano.workerprotocol.LeaseRequest;
 import com.kiano.workerprotocol.LeaseResponse;
 import com.kiano.workerprotocol.OutputFile;
 import java.net.URI;
+import java.time.Instant;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -43,11 +45,12 @@ public class WorkerController {
     private final WorkerStatusStore workerStatus;
     private final ObjectStorage storage;
     private final WorkerAuthProperties properties;
+    private final BatchProperties batchProperties;
     private final ObjectProvider<JobCompletionListener> completionListener;
     private final ObjectProvider<JobFailureListener> failureListener;
 
     public WorkerController(GenerationJobStore jobs, GenerationRunStore runs, WorkerStatusStore workerStatus,
-            ObjectStorage storage, WorkerAuthProperties properties,
+            ObjectStorage storage, WorkerAuthProperties properties, BatchProperties batchProperties,
             ObjectProvider<JobCompletionListener> completionListener,
             ObjectProvider<JobFailureListener> failureListener) {
         this.jobs = jobs;
@@ -55,6 +58,7 @@ public class WorkerController {
         this.workerStatus = workerStatus;
         this.storage = storage;
         this.properties = properties;
+        this.batchProperties = batchProperties;
         this.completionListener = completionListener;
         this.failureListener = failureListener;
     }
@@ -75,8 +79,10 @@ public class WorkerController {
                 jobs.releaseWaiting(executor);
             }
         }
-        // GPU work is single-concurrency: max is always treated as 1.
-        Optional<GenerationJob> leased = jobs.lease(request.workerId(), capabilities);
+        // GPU work is single-concurrency: max is always treated as 1. Batch
+        // jobs flagged night-only wait outside the configured window (C6).
+        Optional<GenerationJob> leased = jobs.lease(request.workerId(), capabilities,
+                batchProperties.nightOpen(Instant.now()));
         return leased.map(job -> ResponseEntity.ok(toLeaseResponse(job))).orElseGet(
                 () -> ResponseEntity.noContent().build());
     }

@@ -6,6 +6,7 @@ import static org.mockito.Mockito.when;
 
 import com.kiano.TestcontainersConfiguration;
 import com.kiano.commerce.ProductCatalog;
+import com.kiano.content.batch.BatchProperties;
 import com.kiano.content.generation.GenerationJob;
 import com.kiano.content.generation.GenerationJobStore;
 import com.kiano.content.generation.GenerationRunStore;
@@ -79,6 +80,8 @@ class H3JobRunnerTest {
     @Autowired
     private TemplateBootstrap bootstrap;
 
+    private final BatchProperties batchProperties = new BatchProperties();
+
     private final StubH3Client client = new StubH3Client();
     private final RecordingCoordinator coordinator = new RecordingCoordinator();
 
@@ -108,7 +111,7 @@ class H3JobRunnerTest {
         properties.getApi().setPollInterval(Duration.ofSeconds(20));
         properties.getApi().setMaxWait(Duration.ofMinutes(15));
         runner = new H3JobRunner(jobs, storage, client, properties, promptBuilder, products, auditLog,
-                providerOf(coordinator), providerOf(coordinator));
+                batchProperties, providerOf(coordinator), providerOf(coordinator));
     }
 
     @Test
@@ -146,7 +149,7 @@ class H3JobRunnerTest {
         restarted.pollResult = id -> new H3TaskStatus.Succeeded("h3-file-1");
         restarted.downloadContent = MP4;
         H3JobRunner second = new H3JobRunner(jobs, storage, restarted, properties, promptBuilder,
-                products, auditLog, providerOf(coordinator), providerOf(coordinator));
+                products, auditLog, batchProperties, providerOf(coordinator), providerOf(coordinator));
         jdbcTemplate.update("update generation_job set run_after = now() where id = ?", jobId);
 
         second.pollOnce();

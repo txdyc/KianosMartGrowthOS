@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.kiano.TestcontainersConfiguration;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
@@ -246,5 +247,37 @@ class TaskQueueTest {
     @Test
     void pollOnce_whenEmpty_returnsFalse() {
         assertThat(dispatcher.pollOnce()).isFalse();
+    }
+
+    // ---- C6 Task 1: task priorities and delayed runs (Review Focus 2) ----
+
+    @Test
+    void claim_interactiveTaskBeforeQueuedBatchTasks() {
+        long olderBatch = queue.enqueue(tenantId, "ok", Map.of("i", 1), null, 10, null).orElseThrow();
+        queue.enqueue(tenantId, "ok", Map.of("i", 2), null, 10, null);
+        long interactive = queue.enqueue(tenantId, "ok", Map.of("i", 3), null, 0, null).orElseThrow();
+
+        // the interactive task is claimed first even though it was queued last
+        assertThat(dispatcher.pollOnce()).isTrue();
+        assertThat(succeededIds()).containsExactly(interactive);
+        // then the oldest batch task
+        assertThat(dispatcher.pollOnce()).isTrue();
+        assertThat(succeededIds()).containsExactlyInAnyOrder(interactive, olderBatch);
+    }
+
+    private List<Long> succeededIds() {
+        return jdbcTemplate.queryForList(
+                "select id from platform_task where tenant_id = ? and status = 'SUCCEEDED'",
+                Long.class, tenantId);
+    }
+
+    @Test
+    void enqueue_runAfterDelaysClaim() {
+        long delayed = queue.enqueue(tenantId, "ok", Map.of("i", 9), null, 0,
+                Instant.now().plusSeconds(60)).orElseThrow();
+
+        assertThat(dispatcher.pollOnce()).isFalse();
+        assertThat(jdbcTemplate.queryForObject("select status from platform_task where id = ?",
+                String.class, delayed)).isEqualTo("QUEUED");
     }
 }

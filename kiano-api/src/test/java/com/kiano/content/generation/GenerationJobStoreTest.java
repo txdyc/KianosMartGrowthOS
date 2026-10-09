@@ -96,6 +96,80 @@ class GenerationJobStoreTest {
         assertThat(comfy.get().id()).isEqualTo(cutoutId);
     }
 
+    // ---- C6 Task 1: priorities and the night window (Review Focus 1 and 2) ----
+
+    private long createJob(JobStep step, String variant, GenerationJobStore.JobPriority priority) {
+        return jobs.create(tenantId, productId, runId, step, variant,
+                Map.of("inputs", Map.of("image", "t1/gen/x.png"), "outputs", Map.of("cutout", "t1/gen/y.png")),
+                List.of(), priority);
+    }
+
+    @Test
+    void lease_interactiveBeforeEarlierBatchJobs() {
+        long oldestBatch = createJob(JobStep.CUTOUT, "P1",
+                new GenerationJobStore.JobPriority(10, 42L, false));
+        createJob(JobStep.CUTOUT, "P2", new GenerationJobStore.JobPriority(10, 42L, false));
+        createJob(JobStep.CUTOUT, "P3", new GenerationJobStore.JobPriority(10, 42L, false));
+        long interactive = createJob(JobStep.CUTOUT, "P4", GenerationJobStore.JobPriority.INTERACTIVE);
+
+        Optional<GenerationJob> leased = jobs.lease("worker-1", Set.of(ExecutorType.COMFYUI), true);
+
+        assertThat(leased).isPresent();
+        assertThat(leased.get().id()).isEqualTo(interactive);
+        assertThat(leased.get().priority()).isZero();
+        assertThat(leased.get().batchId()).isNull();
+        assertThat(leased.get().nightOnly()).isFalse();
+        // the batch jobs follow, oldest first
+        assertThat(jobs.lease("worker-1", Set.of(ExecutorType.COMFYUI), true).orElseThrow().id())
+                .isEqualTo(oldestBatch);
+    }
+
+    @Test
+    void lease_nightOnlySkippedOutsideWindow_interactiveStillLeased() {
+        long night = createJob(JobStep.CUTOUT, "P1", new GenerationJobStore.JobPriority(10, 42L, true));
+        long interactive = createJob(JobStep.CUTOUT, "P2", GenerationJobStore.JobPriority.INTERACTIVE);
+
+        // daytime: the batch job waits, the interactive one is leased as usual
+        assertThat(jobs.lease("worker-1", Set.of(ExecutorType.COMFYUI), false).orElseThrow().id())
+                .isEqualTo(interactive);
+        assertThat(jobs.find(tenantId, night).orElseThrow().status()).isEqualTo(JobStatus.QUEUED);
+
+        // night: the batch job becomes leasable
+        GenerationJob leasedNight = jobs.lease("worker-1", Set.of(ExecutorType.COMFYUI), true).orElseThrow();
+        assertThat(leasedNight.id()).isEqualTo(night);
+        assertThat(leasedNight.batchId()).isEqualTo(42L);
+        assertThat(leasedNight.nightOnly()).isTrue();
+    }
+
+    @Test
+    void retryAndWaitingRecovery_keepPriorityBatchAndNightFlag() {
+        long jobId = createJob(JobStep.CUTOUT, "P1", new GenerationJobStore.JobPriority(10, 42L, true));
+
+        jobs.lease("worker-1", Set.of(ExecutorType.COMFYUI), true);
+        jobs.fail(jobId, "worker-1", "boom", true, false);
+        GenerationJob retried = jobs.find(tenantId, jobId).orElseThrow();
+        assertThat(retried.status()).isEqualTo(JobStatus.QUEUED);
+        assertThat(retried.priority()).isEqualTo(10);
+        assertThat(retried.batchId()).isEqualTo(42L);
+        assertThat(retried.nightOnly()).isTrue();
+
+        jdbcTemplate.update("update generation_job set run_after = now() where id = ?", jobId);
+        jobs.lease("worker-1", Set.of(ExecutorType.COMFYUI), true);
+        jobs.fail(jobId, "worker-1", "ComfyUI down", true, true);
+        GenerationJob waiting = jobs.find(tenantId, jobId).orElseThrow();
+        assertThat(waiting.status()).isEqualTo(JobStatus.WAITING_EXECUTOR);
+        assertThat(waiting.priority()).isEqualTo(10);
+        assertThat(waiting.batchId()).isEqualTo(42L);
+        assertThat(waiting.nightOnly()).isTrue();
+
+        jobs.releaseWaiting(ExecutorType.COMFYUI);
+        GenerationJob released = jobs.find(tenantId, jobId).orElseThrow();
+        assertThat(released.status()).isEqualTo(JobStatus.QUEUED);
+        assertThat(released.priority()).isEqualTo(10);
+        assertThat(released.batchId()).isEqualTo(42L);
+        assertThat(released.nightOnly()).isTrue();
+    }
+
     @Test
     void lease_concurrentWorkers_neverShareJob() throws Exception {
         for (int i = 0; i < 6; i++) {
