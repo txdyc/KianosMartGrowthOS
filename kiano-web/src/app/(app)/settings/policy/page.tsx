@@ -13,6 +13,7 @@ type Section = (typeof SECTIONS)[number];
 interface SectionText {
   title: string;
   body: string;
+  badge: string;
 }
 
 interface PolicyView {
@@ -51,6 +52,7 @@ export default function PolicyPage() {
             next[section] = {
               title: existing?.title ?? "",
               body: existing?.body ?? "",
+              badge: existing?.badge ?? "",
             };
           }
           setDraft(next);
@@ -198,6 +200,24 @@ function SectionEditor({
           className={inputClass}
         />
       </label>
+      <label className="flex flex-col gap-1 text-sm">
+        <span className="flex items-center justify-between">
+          <span>{t("ads.badge")}</span>
+          <span className={value.badge.length > 40 ? "font-medium text-red-600 dark:text-red-400" : "text-zinc-400"}>
+            {value.badge.length} / 40
+          </span>
+        </span>
+        <input
+          type="text"
+          maxLength={200}
+          value={value.badge}
+          onChange={(e) => onChange({ ...value, badge: e.target.value })}
+          className={inputClass}
+        />
+        <span className="text-xs text-zinc-500 dark:text-zinc-400">
+          {value.badge.length > 40 ? t("ads.badgeTooLong") : t("ads.badgeHint")}
+        </span>
+      </label>
     </fieldset>
   );
 }
@@ -205,7 +225,7 @@ function SectionEditor({
 function emptyDraft(): Record<Section, SectionText> {
   const out = {} as Record<Section, SectionText>;
   for (const section of SECTIONS) {
-    out[section] = { title: "", body: "" };
+    out[section] = { title: "", body: "", badge: "" };
   }
   return out;
 }

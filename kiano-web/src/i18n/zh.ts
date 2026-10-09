@@ -14,6 +14,7 @@ export const zh: Record<MessageKey, string> = {
   "nav.facts": "事实表",
   "nav.policy": "店铺政策",
   "nav.aiModels": "AI 模型",
+  "nav.ads": "广告",
   "nav.logout": "退出登录",
 
   // login
@@ -82,7 +83,11 @@ export const zh: Record<MessageKey, string> = {
   "precheck.OCCUPANCY_OUT_OF_RANGE": "产品占比超出范围",
   "precheck.FACT_MISMATCH": "与事实不一致",
   "precheck.FORBIDDEN_CLAIM": "违规宣传",
+  "precheck.TOO_LONG": "文案过长",
+  "precheck.PRICE_IN_COPY": "文案中包含价格",
+  "precheck.MISSING_PLACEHOLDER": "缺少价格/折扣占位符",
   "precheck.POLICY_PENDING": "店铺政策未填写",
+  "precheck.TEXT_OUTSIDE_SAFE_AREA": "文字超出安全区",
 
   // RejectReason
   "reject.PRODUCT_MISMATCH": "产品不符",
@@ -351,6 +356,43 @@ export const zh: Record<MessageKey, string> = {
   "llm.warning.visionRequired": "事实草稿需要能看图的模型。",
   "llm.testDetail": "{model} · {latency} ms · ${cost}",
 
+  // 静态广告（C4a）
+  "ads.title": "静态广告",
+  "ads.heroOnly": "静态广告仅对 HERO 级商品开放。",
+  "ads.generateCopy": "生成文案",
+  "ads.regenerate": "重新生成",
+  "ads.render": "渲染",
+  "ads.generated": "文案已生成",
+  "ads.inReview": "审核中",
+  "ads.approved": "已通过",
+  "ads.missing": "暂无文案",
+  "ads.preconditions": "渲染被阻塞，请先处理以下问题：",
+  "ads.exportTitle": "广告导出",
+  "ads.selectHero": "选择要导出的 HERO 商品",
+  "ads.export": "导出",
+  "ads.exportHistory": "导出记录",
+  "ads.download": "下载",
+  "ads.downloadReady": "可下载",
+  "ads.notReady": "未就绪",
+  "ads.failed": "失败",
+  "ads.replacements": "替换文件（重新上传时使用新文件）",
+  "ads.replacementsEmpty": "暂无替换文件。",
+  "ads.copyFileName": "复制",
+  "ads.noCopy": "请至少选择一个商品",
+  "ads.pending": "排队中",
+  "ads.applied": "已应用",
+  "ads.regenerateHook": "重新生成",
+  "ads.badge": "分区角标",
+  "ads.badgeHint": "显示在该分区旁角标上的短文案（可选）",
+  "ads.badgeTooLong": "角标最多 40 个字符",
+  "ads.hook.pricehook": "促销价",
+  "ads.hook.problem": "痛点",
+  "ads.hook.demo": "演示",
+  "ads.hook.trust": "信任",
+  "ads.field.overlay": "弹层文案",
+  "ads.field.headline": "主标题",
+  "ads.field.primaryText": "正文",
+
   // generic
   "loading": "加载中…",
 
@@ -412,4 +454,16 @@ export const zh: Record<MessageKey, string> = {
   "error.LLM_TEST_FAILED": "连接测试意外失败，请检查提供商设置和 key 后重试。",
   "error.LLM_PROVIDER_KIND_IMMUTABLE": "提供商类型不能修改，请新增一个提供商。",
   "error.LLM_TRUNCATED": "AI 输出被截断，请调大 token 上限或简化请求。",
+
+  // C4a 静态广告错误
+  "error.NOT_HERO": "静态广告仅支持 HERO 级商品。",
+  "error.FACTS_NOT_LOCKED": "请先锁定事实表再生成广告内容。",
+  "error.AD_PRECONDITIONS": "部分广告渲染条件未满足。",
+  "error.AD_BASE_MISSING": "缺少商品基础资产。",
+  "error.POLICY_BADGES_MISSING": "渲染广告前请为每个政策分区填写角标。",
+  "error.DEMO_FRAME_UNAVAILABLE": "该商品没有可用的演示帧。",
+  "error.PRICE_MISSING": "该商品没有可用于广告展示的价格。",
+  "error.NOTHING_TO_EXPORT": "没有可导出的 HERO 商品。",
+  "error.AD_COPY_MISSING": "请先生成每个 hook 的广告文案。",
+  "error.AD_COPY_INVALID": "广告文案无效，请检查三个字段。",
 };

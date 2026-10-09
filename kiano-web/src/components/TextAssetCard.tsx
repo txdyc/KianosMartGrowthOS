@@ -6,6 +6,13 @@ import { errorText, useI18n } from "@/i18n";
 import type { TFunction } from "@/i18n";
 import { en } from "@/i18n/en";
 import { charLimit } from "@/lib/review";
+import {
+  adCopyFieldLimit,
+  adCopyFields,
+  adCopyOverCount,
+  parseAdCopy,
+  serializeAdCopy,
+} from "@/lib/ads";
 import type { MessageKey } from "@/i18n";
 import type { FactsJson, PrecheckFlag, ReviewItem } from "@/lib/types";
 
@@ -36,9 +43,13 @@ export function TextAssetCard({
 }) {
   const { t } = useI18n();
   const [draft, setDraft] = useState(item.textBody ?? "");
+  const [adDraft, setAdDraft] = useState<{ overlay: string; headline: string; primaryText: string }>(
+    () => parseAdCopy(item.textBody),
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const isAdCopy = item.specCode === "AD_COPY";
   const body = editing ? draft : (item.textBody ?? "");
   const isSeo = item.specCode === "COPY_SEO";
   const isHtml = item.specCode === "COPY_LONG" || item.specCode === "COPY_SHORT";
@@ -53,6 +64,7 @@ export function TextAssetCard({
 
   const startEdit = () => {
     setDraft(item.textBody ?? "");
+    setAdDraft(parseAdCopy(item.textBody));
     onEditingChange(true);
     setError(null);
   };
@@ -61,7 +73,7 @@ export function TextAssetCard({
     setSaving(true);
     setError(null);
     try {
-      await onSave(draft);
+      await onSave(isAdCopy ? serializeAdCopy(adDraft) : draft);
       onEditingChange(false);
       setSaving(false);
     } catch (err) {
@@ -84,10 +96,12 @@ export function TextAssetCard({
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-600 dark:text-zinc-400">
         <span className="font-medium text-zinc-800 dark:text-zinc-200">{specText(t, item.specCode)}</span>
         <span>v{item.version}</span>
-        <span className={overLimit ? "font-medium text-red-600 dark:text-red-400" : undefined}>
-          {charCount.toLocaleString()}
-          {limit !== null ? ` / ${limit}` : ""}
-        </span>
+        {!isAdCopy ? (
+          <span className={overLimit ? "font-medium text-red-600 dark:text-red-400" : undefined}>
+            {charCount.toLocaleString()}
+            {limit !== null ? ` / ${limit}` : ""}
+          </span>
+        ) : null}
         {item.flags.map((flag) => (
           <PrecheckBadge key={flag} flag={flag} text={t(`precheck.${flag}`)} />
         ))}
@@ -100,7 +114,9 @@ export function TextAssetCard({
       ) : null}
 
       {/* body */}
-      {isSeo ? (
+      {isAdCopy ? (
+        <AdCopyView copy={parseAdCopy(item.textBody)} />
+      ) : isSeo ? (
         <SeoView body={body} t={t} />
       ) : isHtml ? (
         <div className="rounded border border-zinc-100 dark:border-zinc-800">
@@ -117,19 +133,23 @@ export function TextAssetCard({
 
       {/* edit box */}
       {editing ? (
-        <textarea
-          autoFocus
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              e.preventDefault();
-              cancel();
-            }
-          }}
-          rows={6}
-          className="w-full rounded-md border border-zinc-300 bg-white p-2 font-mono text-xs leading-relaxed dark:border-zinc-700 dark:bg-zinc-950"
-        />
+        isAdCopy ? (
+          <AdCopyEditor value={adDraft} onChange={setAdDraft} />
+        ) : (
+          <textarea
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                cancel();
+              }
+            }}
+            rows={6}
+            className="w-full rounded-md border border-zinc-300 bg-white p-2 font-mono text-xs leading-relaxed dark:border-zinc-700 dark:bg-zinc-950"
+          />
+        )
       ) : null}
 
       {/* actions */}
@@ -181,6 +201,85 @@ function PrecheckBadge({ flag, text }: { flag: PrecheckFlag; text: string }) {
     >
       {label}
     </span>
+  );
+}
+
+/** Localized field label for an AD_COPY field; unknown → raw name. */
+function adCopyFieldText(t: TFunction, field: string): string {
+  const key = `ads.field.${field}` as MessageKey;
+  return key in en ? t(key) : field;
+}
+
+/** Read-only view of an AD_COPY asset: the three fields with counts/limits. */
+function AdCopyView({
+  copy,
+}: {
+  copy: { overlay: string; headline: string; primaryText: string };
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="flex flex-col gap-1.5">
+      {adCopyFields.map((field) => {
+        const value = copy[field];
+        const limit = adCopyFieldLimit(field);
+        const over = adCopyOverCount(field, value.length);
+        return (
+          <div key={field} className="flex items-start gap-2 text-xs">
+            <span className="w-24 shrink-0 truncate font-medium text-zinc-500 dark:text-zinc-400">
+              {adCopyFieldText(t, field)}
+            </span>
+            <span className="flex-1 break-words text-zinc-700 dark:text-zinc-300">{value}</span>
+            <span
+              className={
+                over > 0
+                  ? "shrink-0 font-medium text-red-600 dark:text-red-400"
+                  : "shrink-0 text-zinc-400"
+              }
+            >
+              {value.length} / {limit}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Inline three-field editor for an AD_COPY asset. */
+function AdCopyEditor({
+  value,
+  onChange,
+}: {
+  value: { overlay: string; headline: string; primaryText: string };
+  onChange: (next: { overlay: string; headline: string; primaryText: string }) => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="flex flex-col gap-2">
+      {adCopyFields.map((field) => {
+        const limit = adCopyFieldLimit(field);
+        const over = adCopyOverCount(field, value[field].length);
+        return (
+          <label key={field} className="flex flex-col gap-0.5 text-xs">
+            <span className="flex items-center justify-between">
+              <span className="font-medium text-zinc-500 dark:text-zinc-400">
+                {adCopyFieldText(t, field)}
+              </span>
+              <span className={over > 0 ? "font-medium text-red-600 dark:text-red-400" : "text-zinc-400"}>
+                {value[field].length} / {limit}
+              </span>
+            </span>
+            <textarea
+              autoFocus={field === adCopyFields[0]}
+              rows={field === "primaryText" ? 4 : 2}
+              value={value[field]}
+              onChange={(e) => onChange({ ...value, [field]: e.target.value })}
+              className="w-full rounded-md border border-zinc-300 bg-white p-2 font-mono text-xs leading-relaxed dark:border-zinc-700 dark:bg-zinc-950"
+            />
+          </label>
+        );
+      })}
+    </div>
   );
 }
 

@@ -32,7 +32,7 @@ test("dictionary covers every backend enum and error code", () => {
   const jobSteps = ["CUTOUT", "SCENE_INPUT", "WHITE_MAIN", "WHITE_ANGLE", "INBOX", "SCENE"];
   const jobStatuses = ["QUEUED", "LEASED", "WAITING_EXECUTOR", "SUCCEEDED", "FAILED", "CANCELLED"];
   const runStatuses = ["RUNNING", "DONE", "PARTIAL"];
-  const precheckFlags = ["PRODUCT_MISMATCH", "AI_TEXT", "EDGE_NOT_WHITE", "OCCUPANCY_OUT_OF_RANGE", "FACT_MISMATCH", "FORBIDDEN_CLAIM", "POLICY_PENDING"];
+  const precheckFlags = ["PRODUCT_MISMATCH", "AI_TEXT", "EDGE_NOT_WHITE", "OCCUPANCY_OUT_OF_RANGE", "FACT_MISMATCH", "FORBIDDEN_CLAIM", "TOO_LONG", "PRICE_IN_COPY", "MISSING_PLACEHOLDER", "POLICY_PENDING", "TEXT_OUTSIDE_SAFE_AREA"];
   const rejectReasons = ["PRODUCT_MISMATCH", "AI_ARTIFACT", "WRONG_FACT", "TEXT_ERROR", "STYLE", "LOW_QUALITY", "POLICY"];
   const errorCodes = [
     "UNAUTHENTICATED",

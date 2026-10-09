@@ -12,6 +12,7 @@ export const en = {
   "nav.facts": "Facts",
   "nav.policy": "Store policy",
   "nav.aiModels": "AI models",
+  "nav.ads": "Ads",
   "nav.logout": "Logout",
 
   // login
@@ -80,7 +81,11 @@ export const en = {
   "precheck.OCCUPANCY_OUT_OF_RANGE": "Product occupancy out of range",
   "precheck.FACT_MISMATCH": "Facts do not match",
   "precheck.FORBIDDEN_CLAIM": "Forbidden claim",
+  "precheck.TOO_LONG": "Text is too long",
+  "precheck.PRICE_IN_COPY": "Price appears in the ad copy",
+  "precheck.MISSING_PLACEHOLDER": "Missing price/discount placeholder",
   "precheck.POLICY_PENDING": "Store policy not filled",
+  "precheck.TEXT_OUTSIDE_SAFE_AREA": "Text outside the safe area",
 
   // RejectReason
   "reject.PRODUCT_MISMATCH": "Product mismatch",
@@ -349,6 +354,43 @@ export const en = {
   "llm.warning.visionRequired": "Fact drafts need a model that can see images.",
   "llm.testDetail": "{model} · {latency} ms · ${cost}",
 
+  // static ads (C4a)
+  "ads.title": "Static ads",
+  "ads.heroOnly": "Static ads are available for HERO tier products only.",
+  "ads.generateCopy": "Generate copy",
+  "ads.regenerate": "Regenerate",
+  "ads.render": "Render",
+  "ads.generated": "Copy generated",
+  "ads.inReview": "In review",
+  "ads.approved": "Approved",
+  "ads.missing": "No copy yet",
+  "ads.preconditions": "Render blocked — fix these first:",
+  "ads.exportTitle": "Ad exports",
+  "ads.selectHero": "Select HERO products to export",
+  "ads.export": "Export",
+  "ads.exportHistory": "Export history",
+  "ads.download": "Download",
+  "ads.downloadReady": "Download ready",
+  "ads.notReady": "Not ready",
+  "ads.failed": "Failed",
+  "ads.replacements": "Replacement files (use the new file when re-uploading)",
+  "ads.replacementsEmpty": "No replacements yet.",
+  "ads.copyFileName": "Copy",
+  "ads.noCopy": "Select at least one product",
+  "ads.pending": "Pending",
+  "ads.applied": "Applied",
+  "ads.regenerateHook": "Regenerate",
+  "ads.badge": "Section badge",
+  "ads.badgeHint": "Short label shown on the badge beside this section (optional)",
+  "ads.badgeTooLong": "Badge must be at most 40 characters",
+  "ads.hook.pricehook": "Price hook",
+  "ads.hook.problem": "Problem",
+  "ads.hook.demo": "Demo",
+  "ads.hook.trust": "Trust",
+  "ads.field.overlay": "Overlay",
+  "ads.field.headline": "Headline",
+  "ads.field.primaryText": "Primary text",
+
   // generic
   "loading": "Loading…",
 
@@ -411,6 +453,18 @@ export const en = {
   "error.LLM_TEST_FAILED": "The connection test failed unexpectedly. Check the provider settings and key, then try again.",
   "error.LLM_PROVIDER_KIND_IMMUTABLE": "A provider's type cannot be changed. Add a new provider instead.",
   "error.LLM_TRUNCATED": "The AI output was cut off; increase the token budget or simplify the request.",
+
+  // C4a static ads errors
+  "error.NOT_HERO": "Only HERO tier products support static ads.",
+  "error.FACTS_NOT_LOCKED": "Lock the facts before generating ad content.",
+  "error.AD_PRECONDITIONS": "Some ad render requirements are not met.",
+  "error.AD_BASE_MISSING": "The base product assets are missing.",
+  "error.POLICY_BADGES_MISSING": "Fill a badge for every policy section before rendering ads.",
+  "error.DEMO_FRAME_UNAVAILABLE": "No usable demo frame is available for this product.",
+  "error.PRICE_MISSING": "The product has no price to show on the ad.",
+  "error.NOTHING_TO_EXPORT": "No HERO products are ready to export.",
+  "error.AD_COPY_MISSING": "Generate ad copy for every hook first.",
+  "error.AD_COPY_INVALID": "The ad copy is invalid; check the three fields.",
 } as const;
 
 export type MessageKey = keyof typeof en;

@@ -141,7 +141,11 @@ export type PrecheckFlag =
   | "OCCUPANCY_OUT_OF_RANGE"
   | "FACT_MISMATCH"
   | "FORBIDDEN_CLAIM"
-  | "POLICY_PENDING";
+  | "TOO_LONG"
+  | "PRICE_IN_COPY"
+  | "MISSING_PLACEHOLDER"
+  | "POLICY_PENDING"
+  | "TEXT_OUTSIDE_SAFE_AREA";
 
 /** Human reject reasons on the review board (content.asset.RejectReason). */
 export type RejectReason =
@@ -210,6 +214,40 @@ export interface ReviewItem {
   textBody: string | null;
   charCount: number | null;
   factVersion: number | null;
+}
+
+/** Lifecycle of an ad export (GET /api/v1/content/ads/exports). */
+export type AdExportStatus = "PENDING" | "APPLIED" | "FAILED";
+
+/** One row of GET /api/v1/content/ads/exports. */
+export interface AdExportView {
+  publicationId: number;
+  status: AdExportStatus;
+  error: string | null;
+  fileCount: number;
+  zipKey: string | null;
+  publishedAt: string | null;
+}
+
+/** One row of GET /api/v1/content/ads/replacements. */
+export interface AdReplacement {
+  productId: number;
+  sku: string;
+  variant: string;
+  oldFileName: string;
+  oldAssetId: number;
+  newFileName: string;
+  newAssetId: number;
+  newStatus: AssetStatus | null;
+}
+
+/**
+ * Latest AD_COPY asset for one ad hook (computed from GET /content/assets by
+ * adCopyStatuses). asset is null when the hook has no AD_COPY asset yet.
+ */
+export interface AdCopyStatus {
+  hook: string;
+  asset: ReviewItem | null;
 }
 
 /** Provenance of one fact-sheet field (content.facts.FieldSource). */
