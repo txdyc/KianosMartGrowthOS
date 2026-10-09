@@ -204,12 +204,15 @@ Kiano 写 Woo → Woo 触发 `order.updated` webhook → 回到 Kiano。处理�
 - 前端 JS 生成 `kiano_vid`（访客 ID，first-party cookie，365 天）和 `kiano_sid`（会话 ID，30 分钟无活动过期）。必须在前端生成，因为 Cloudflare / 页面缓存会让服务端生成失效。
 - 首次落地时记录 `fbclid`、`gclid`、`_fbc`、`_fbp`、`utm_*`、landing URL、时间（first touch 与 last touch 各一份，cookie 存储，7 天）。
 - 下单时写入订单 meta：`_kiano_vid`、`_kiano_sid`、`_kiano_first_touch`、`_kiano_last_touch`（JSON）。
+- **扩展 meta（2026-10 确认）**：`_kiano_fbc`、`_kiano_fbp`（下单时读取 Meta Pixel cookie，比落地时更可靠）、`_kiano_phone_e164`（规范化电话，不改动顾客原始填写）、`_kiano_gps_address`（规范化 GPS，优先 shipping 其次 billing 的稳定契约）、`_kiano_plugin_version`。
 - 与 WooCommerce 内置 Order Attribution（`_wc_order_attribution_*`）并存：内置字段提供 source type / utm，插件补充 click id 和访客 ID。
+- 已确认钩子：区块结账 `woocommerce_store_api_checkout_update_order_from_request`、经典结账 `woocommerce_checkout_create_order`（均在 `$order->save()` 之前触发）。
 
 ### 7.2 结账字段
 
-- 增加 **GhanaPost GPS 数字地址**（可选填，COD 订单强烈提示填写）。
-- 电话字段前端校验并提示 Ghana 号码格式。
+- 增加 **GhanaPost GPS 数字地址**（可选填，COD 订单强烈提示填写）。GPS 使用 Additional Checkout Fields API（字段 ID `kiano/gps-address`，location `address`），Woo 自动存入 `_wc_billing|shipping/kiano/gps-address`；插件镜像到 `_kiano_gps_address` 作为稳定契约。
+- 电话字段前端提示 + **服务端校验**（仅 billing 国家为 GH 时）：`woocommerce_blocks_validate_location_address_fields`（区块）与 `woocommerce_after_checkout_validation`（经典），非法 Ghana 号码返回 `kiano_invalid_phone` 错误。
+- **只支持区块结账**（本店实际使用）；经典结账钩子一同接入但验收只做区块结账。
 
 ### 7.3 自定义订单状态
 

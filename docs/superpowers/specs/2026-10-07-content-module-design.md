@@ -393,6 +393,7 @@ DRAFT ──自动预检──▶ IN_REVIEW ──APPROVE──▶ APPROVED ─�
 **C4 范围调整（2026-10-08 用户确认，详见 `docs/superpowers/plans/2026-10-08-c4a-ad-statics.md`）**
 - C4 拆分为 **C4a（本仓库实现，已完成）** 与 **C4b（kiano-connector 插件，在 KianosMart 仓库实现）**。
 - C4a 覆盖：4 个 hook（pricehook/problem/demo/trust）共 12 张广告静态图（素材规格 `AD_STATIC`）、按 hook 的 LLM 文案（`AD_COPY`，人工审核后可编辑）、demo 底图自动取 V1 视频最清晰帧、ZIP + `manifest.csv` 导出（publication `AD_EXPORT`）、改价后价格类广告自动 STALE/重渲染/满足条件自动通过、审核看板 REGENERATE 与替换清单。示意架构见 §7.3/§7.5/§10.2/§10.3。
+- **C4b 验收标准（2026-10-09 通过）**：插件的验收标准是——区块结账的 COD 订单进入 `kiano-awaiting`，并带有完整的触点 meta（vid/sid/first/last touch）、GhanaPost GPS 地址与 E.164 电话号码；改拒收后库存回补且不计入 Analytics。
 
 C6 之后：Kiano 核心迁移到 VPS，笔记本保留 kiano-worker；然后按 v1.2 继续 S2–S6。
 
