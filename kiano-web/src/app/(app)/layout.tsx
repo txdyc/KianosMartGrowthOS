@@ -14,6 +14,7 @@ type NavHref =
   | "/import"
   | "/review"
   | "/reshoot"
+  | "/ads"
   | "/settings/integrations"
   | "/settings/policy"
   | "/settings/llm";
@@ -46,6 +47,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     { href: "/import", label: t("nav.import") },
     { href: "/review", label: t("nav.review") },
     { href: "/reshoot", label: t("nav.reshoot") },
+    { href: "/ads", label: t("nav.ads") },
   ];
   if (me !== null && isOwner(me.role)) {
     links.push({ href: "/settings/integrations", label: t("nav.settings") });
