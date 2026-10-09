@@ -160,14 +160,21 @@ public class BatchOrchestrator {
     private void tickItem(long tenantId, BatchEntity batch, BatchItemEntity item,
             ItemSnapshot snapshot, Round round) {
         Resolution resolution = BatchStageResolver.resolve(snapshot);
-        if (resolution.stage() == BatchStage.BLOCKED) {
+        // the dashboard's retry clears the reference of a FAILED staging publish:
+        // the item stays blocked unless this tick requests the publish again (T6)
+        boolean stagingRetry = stagingRetryPending(item, snapshot, resolution);
+        if (resolution.stage() == BatchStage.BLOCKED && !stagingRetry) {
             recordBlocked(tenantId, batch, item, resolution.blockedReason(), resolution.details());
             return;
         }
         if (item.getBlockedReason() != null) {
+            // updateById would keep the old values: clearing needs an explicit set
             item.setBlockedReason(null);
             item.setBlockedDetails(null);
-            itemMapper.updateById(item);
+            itemMapper.update(null, Wrappers.<BatchItemEntity>lambdaUpdate()
+                    .eq(BatchItemEntity::getId, item.getId())
+                    .set(BatchItemEntity::getBlockedReason, null)
+                    .set(BatchItemEntity::getBlockedDetails, null));
         }
         if (item.getImageRunId() != null && "RUNNING".equals(snapshot.imageRunStatus())) {
             round.activePipelines++;
@@ -190,9 +197,22 @@ public class BatchOrchestrator {
             queueFactDraft(tenantId, batch, item, round);
         }
         // 3. publish the finished SKU to staging, spaced by publish-interval
-        if (resolution.stage() == BatchStage.STAGING && item.getStagingPublicationId() == null) {
+        if ((resolution.stage() == BatchStage.STAGING || stagingRetry)
+                && item.getStagingPublicationId() == null) {
             requestStaging(tenantId, batch, item);
         }
+    }
+
+    /**
+     * The user pressed retry on a FAILED staging publish: the reference was
+     * cleared while the publication itself is still the FAILED latest one, so
+     * the tick requests the publish again instead of staying blocked (T6).
+     */
+    private static boolean stagingRetryPending(BatchItemEntity item, ItemSnapshot snapshot,
+            Resolution resolution) {
+        return "PUBLISH_FAILED".equals(resolution.blockedReason())
+                && item.getStagingPublicationId() == null
+                && "FAILED".equals(snapshot.stagingStatus());
     }
 
     private long startPipeline(long tenantId, BatchEntity batch, BatchItemEntity item) {

@@ -107,6 +107,19 @@ public class PublicationService {
                 "SYSTEM", "BATCH", 10, runAfter, Map.of("batchId", batchId));
     }
 
+    /**
+     * OWNER production publish spaced by the batch publish interval (C6
+     * Task 6): same preconditions and staging gate as {@link #request}, but the
+     * task carries the batch priority and the caller's {@code runAfter}.
+     */
+    @Transactional
+    public long requestProductionSpaced(CurrentUser user, long productId,
+            @Nullable Instant runAfter) {
+        requireRole(user, PublishEnvironment.PRODUCTION);
+        return enqueue(user.tenantId(), productId, PublishEnvironment.PRODUCTION, user.userId(),
+                ActorType.USER, String.valueOf(user.userId()), "PUBLISH", 10, runAfter, null);
+    }
+
     /** Shared publish request: preconditions, row, task and audit. */
     private long enqueue(long tenantId, long productId, PublishEnvironment environment,
             @Nullable Long publishedBy, ActorType actor, String actorId, String source,
