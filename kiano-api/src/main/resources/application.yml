@@ -63,6 +63,16 @@ kiano:
     publish-interval: 10s
     night-window: "22:00-07:00"
     zone: Africa/Accra
+    default-gpu-seconds:
+      CUTOUT: 40
+      SCENE_INPUT: 10
+      WHITE_MAIN: 20
+      WHITE_ANGLE: 20
+      INBOX: 20
+      SCENE: 60
+      H3_CLIP_API: 20
+      H3_CLIP_LOCAL: 60
+      VIDEO_COMPOSE: 20
   content:
     workflows:
       allowed-licenses: [MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, CreativeML-OpenRAIL++-M]

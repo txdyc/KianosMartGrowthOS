@@ -14,9 +14,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Batch endpoints (C6 Task 2): the batch list, the creation page's candidate
- * SKUs (STANDARD top-level products with their shot state) and the pause /
- * resume / cancel actions. The dashboard endpoints follow in Task 4.
+ * Batch endpoints (C6 Task 2/4): the batch list, the creation page's candidate
+ * SKUs (STANDARD top-level products with their shot state), the pause / resume
+ * / cancel actions and the dashboard's progress snapshot.
  */
 @RestController
 @RequestMapping("/api/v1/content/batches")
@@ -28,9 +28,11 @@ public class BatchController {
     }
 
     private final BatchService batchService;
+    private final BatchProgressService progressService;
 
-    public BatchController(BatchService batchService) {
+    public BatchController(BatchService batchService, BatchProgressService progressService) {
         this.batchService = batchService;
+        this.progressService = progressService;
     }
 
     @GetMapping
@@ -53,6 +55,13 @@ public class BatchController {
                 request.productIds() == null ? List.of() : request.productIds(),
                 Boolean.TRUE.equals(request.nightOnly()));
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
+    }
+
+    @GetMapping("/{id}/progress")
+    @PreAuthorize("hasRole('VIEWER')")
+    public BatchProgressService.BatchProgress progress(CurrentUser user,
+            @PathVariable("id") long batchId) {
+        return progressService.progress(user.tenantId(), batchId);
     }
 
     @PostMapping("/{id}/pause")
