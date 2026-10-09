@@ -108,3 +108,26 @@ kiano:
         demo: {body-min-seconds: 8, body-max-seconds: 15}
         problem: {body-min-seconds: 8, body-max-seconds: 12}
         unboxing: {body-min-seconds: 8, body-max-seconds: 14}
+      h3:
+        backend: "${KIANO_H3_BACKEND:LOCAL_FIRST}"
+        request-seconds: 5
+        api:
+          enabled: "${KIANO_H3_API_ENABLED:false}"
+          base-url: "${KIANO_H3_BASE_URL:https://api.minimax.chat}"
+          api-key: "${MINIMAX_API_KEY:}"
+          model: "hailuo-02"
+          submit-path: /v1/video_generation
+          query-path: /v1/query/video_generation
+          file-path: /v1/files/retrieve
+          resolution: 1080P
+          price-per-second-usd: 0
+          daily-budget-usd: 10
+          poll-interval: 20s
+          max-wait: 15m
+          timeout: 30s
+        local:
+          width: 720
+          height: 1280
+          fps: 24
+          local-max-wait: 2h
+          comfy-timeout-seconds: 1800

@@ -1,0 +1,7 @@
+For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.
+
+integrated_multimodal_description: [Shot 1] Live-action, cinematic, the {{productName}} shown in <Picture 1> stays in {{sceneLabel}} with the same shape, colours, materials, position and framing. The camera moves in a slow arc shot around the product, keeping it centred and fully inside the frame. The light shifts gently from one side to the other while the background stays still and slightly dims, and the colour temperature warms up as the shot ends. [Shot 1] lasts {{durationSeconds}} seconds. No hands, no people, the product does not operate, no on-screen text.
+
+overall_soundscape: Quiet room ambience with a faint, steady hum. No dialogue and no human sounds.
+
+non_diegetic_music: None

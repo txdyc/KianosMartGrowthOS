@@ -1,0 +1,5 @@
+{
+  "task_id": "h3-task-000001",
+  "status": "Fail",
+  "base_resp": {"status_code": 1027, "status_msg": "the prompt was rejected as sensitive content"}
+}
