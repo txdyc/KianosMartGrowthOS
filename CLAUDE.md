@@ -112,8 +112,10 @@ docker compose --profile app up -d --build            # 全容器运行
 - **阶段永远从实际状态推导**：source_media / generation_run / product_fact_sheet / asset / publication，唯一的实现是 `BatchStageResolver`（纯函数）；批次项只存编排引用（runId、publicationId），不存阶段——批次之外的人工操作（如商品页锁定事实）批次要能看到。
 - **交互任务优先**：交互优先级 0、批次 10，领取顺序 `order by priority, id`；批次流水线的下游任务必须继承 `priority`、`batch_id`、`night_only`；审核页“重新生成”永远是交互任务。夜间窗口（`kiano.batch.night-window` 默认 22:00–07:00，`zone=Africa/Accra`）外不领取批次的 GPU 任务。
 - **生产发布始终由 OWNER 确认**：系统只自动发布 staging（`requestSystem`，SYSTEM/BATCH）；批量生产走 `POST /batches/{id}/publish-production`（仅 OWNER），逐 SKU 照常经过 staging 闸门，任务按 `publish-interval` 错开。
-- **编排器必须幂等**：每个租户一轮 tick 先取 advisory lock，动作依赖现有防重（`PIPELINE_RUNNING`、任务去重键、`PUBLISH_IN_PROGRESS`）；单个 SKU 出错只写 `BATCH_ITEM_BLOCKED(INTERNAL)` 不停批次；清空可空列（staging 引用、blocked 原因）要用显式 `set(...null)`，`updateById` 会忽略 null。
-- **审核时间只累计有效操作时间**：心跳单次 ≤ 20 秒、与上次心跳间隔 > 60 秒的补发增量按 0 计、页面不可见不计时；只有 FACT 和 ASSETS 两种会话都结束过的 SKU 才计入平均（目标 180 秒/SKU）。
+- **编排器必须幂等**：每个租户一轮 tick 先取 advisory lock，动作依赖现有防重（`PIPELINE_RUNNING`、任务去重键、`PUBLISH_IN_PROGRESS`）；清空可空列（staging 引用、blocked 原因）要用显式 `set(...null)`，`updateById` 会忽略 null。
+- **单个 SKU 出错不影响其他 SKU**：每个批次项在独立事务（`REQUIRES_NEW`）中推进，出错只回滚这一项；业务错误记录它自己的 code 作为卡住原因（如 `COPY_POLICY_OUTDATED`），非业务异常记 `INTERNAL`，审计 `BATCH_ITEM_BLOCKED`；写卡住原因只更新 blocked 两列。看板对快照推导不出的动作错误显示记录下来的原因（文案先找 `batch.blocked.*`，再找 `error.*`）。
+- **批次的推进规则**：并发流水线上限在每轮开始前先统计正在运行的；商品页手动启动的流水线由批次接管（adopt）。必需物料被驳回且没有可用版本时卡住为 `ASSET_REJECTED`（不会自己重新生成）；生产发布失败为 `PRODUCTION_FAILED`，OWNER 可在批量生产中重新勾选；批量生产中单个 SKU 的业务错误只进 `rejected`。快照读取器的查询只读取批次内的商品。同一商品不能在一个批次里出现两次（422），并发创建用租户级 advisory lock 串行化。
+- **审核时间只累计有效操作时间**：心跳单次 ≤ 20 秒且不超过距上次心跳的实际时间 + 1 秒、与上次心跳间隔 > 60 秒的补发增量按 0 计、页面不可见不计时（隐藏前已累计的时间保留，隐藏时立即补发一次心跳）；心跳读会话时加行锁；只有 FACT 和 ASSETS 两种会话都结束过的 SKU 才计入平均（目标 180 秒/SKU）。
 
 **跨仓库**
 - kiano-connector 插件放在 KianosMart 仓库的 `wp-content/plugins/kiano-connector/`，按那个仓库的规则添加 bind mount。
