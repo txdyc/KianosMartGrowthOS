@@ -103,6 +103,7 @@ test("dictionary covers every backend enum and error code", () => {
     "PRODUCT_IN_ACTIVE_BATCH",
     "BATCH_STATE",
     "SESSION_FINISHED",
+    "VIDEO_RENDER_IN_PROGRESS",
     "NOT_TOP_LEVEL",
   ];
   const licenseTypes = ["CC0", "ROYALTY_FREE_COMMERCIAL", "OWNED"];
@@ -120,6 +121,7 @@ test("dictionary covers every backend enum and error code", () => {
     "H3_BUDGET_EXCEEDED",
     "H3_CONTENT_REJECTED",
     "H3_FAILED",
+    "H3_API_DISABLED",
   ];
   const batchStages = [
     "WAITING_SHOTS",

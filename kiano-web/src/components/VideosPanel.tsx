@@ -5,7 +5,8 @@ import { apiFetch, ApiError } from "@/lib/api";
 import { errorText, useI18n } from "@/i18n";
 import type { MessageKey } from "@/i18n";
 import { en } from "@/i18n/en";
-import type { ContentTier, ReviewItem } from "@/lib/types";
+import type { ContentTier, ReviewItem, VideoRenderStatus } from "@/lib/types";
+import { renderNotice } from "@/lib/videoRender";
 
 /** The three short formats of every HERO SKU, in backend order. */
 const VIDEO_TYPES = ["demo", "problem", "unboxing"] as const;
@@ -31,8 +32,15 @@ export function VideosPanel({ productId, tier }: { productId: number; tier: Cont
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [preconditions, setPreconditions] = useState<string[] | null>(null);
+  const [renderStatus, setRenderStatus] = useState<VideoRenderStatus | null>(null);
 
   const load = useCallback(() => {
+    // planning runs in a background task: its outcome is loaded with the assets
+    void apiFetch<VideoRenderStatus | undefined>(
+      `/api/v1/content/products/${productId}/videos/render-status`,
+    )
+      .then((status) => setRenderStatus(status ?? null))
+      .catch(() => setRenderStatus(null));
     return apiFetch<ReviewItem[]>(`/api/v1/content/assets?productId=${productId}`)
       .then(setAssets)
       .catch((err: unknown) => {
@@ -44,6 +52,17 @@ export function VideosPanel({ productId, tier }: { productId: number; tier: Cont
   useEffect(() => {
     void load();
   }, [load]);
+
+  const notice = useMemo(() => renderNotice(renderStatus), [renderStatus]);
+
+  // while a background render is queued or running, refresh every 5 s
+  useEffect(() => {
+    if (notice?.kind !== "running") {
+      return;
+    }
+    const timer = setInterval(() => void load(), 5000);
+    return () => clearInterval(timer);
+  }, [notice, load]);
 
   const scripts = useMemo(() => latestByType(assets ?? [], "VIDEO_SCRIPT"), [assets]);
   const videos = useMemo(() => latestByType(assets ?? [], "VIDEO_AD"), [assets]);
@@ -117,6 +136,15 @@ export function VideosPanel({ productId, tier }: { productId: number; tier: Cont
       {error !== null ? (
         <p className="text-sm text-red-600 dark:text-red-400" role="alert">
           {error}
+        </p>
+      ) : null}
+
+      {notice?.kind === "running" ? (
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">{t("videos.renderRunning")}</p>
+      ) : null}
+      {notice?.kind === "failed" ? (
+        <p className="text-sm text-red-600 dark:text-red-400" role="alert">
+          {t("videos.renderFailed")} {codeText(t, notice.code)}
         </p>
       ) : null}
 
@@ -220,4 +248,9 @@ function missingText(t: ReturnType<typeof useI18n>["t"], missing: string): strin
     return `${t("videos.missing.footage")}: ${missing}`;
   }
   return missing;
+}
+/** A backend error code as text: its error.* translation when one exists, else the code. */
+function codeText(t: ReturnType<typeof useI18n>["t"], code: string): string {
+  const key = `error.${code}`;
+  return key in en ? t(key as MessageKey) : code;
 }

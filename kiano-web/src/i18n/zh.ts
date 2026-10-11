@@ -447,6 +447,8 @@ export const zh: Record<MessageKey, string> = {
   "videos.noScript": "暂无脚本",
   "videos.notRendered": "未生成",
   "videos.preconditions": "无法生成视频，请先补齐：",
+  "videos.renderRunning": "视频正在后台规划，合成完成后会出现在审核页。",
+  "videos.renderFailed": "上次生成视频失败：",
   "videos.missing.script": "视频脚本",
   "videos.missing.footage": "已验收素材",
   "videos.missing.pageMain": "已通过的主图",
@@ -487,6 +489,7 @@ export const zh: Record<MessageKey, string> = {
   "h3.reason.H3_BUDGET_EXCEEDED": "超出预算",
   "h3.reason.H3_CONTENT_REJECTED": "内容被拒",
   "h3.reason.H3_FAILED": "接口失败",
+  "h3.reason.H3_API_DISABLED": "接口已关闭",
   "review.filters.VIDEO": "视频",
   "review.videoScript.hook": "开场句",
   "review.videoScript.caption": "字幕 {n}",
@@ -571,6 +574,7 @@ export const zh: Record<MessageKey, string> = {
 
   // C5 短视频错误
   "error.VIDEO_PRECONDITIONS": "视频生成的前置条件未满足。",
+  "error.VIDEO_RENDER_IN_PROGRESS": "该视频已在排队或生成中。",
   "error.VIDEO_SOURCE_TOO_SHORT": "素材比该视频类型要求的更短，请缩短演示段或改用其他素材。",
   "error.AI_RATIO_EXCEEDED": "AI 片段占比超过 30%，请剪短开场或增加实拍。",
   "error.SEGMENT_OUT_OF_SOURCE": "片段超出了素材长度。",

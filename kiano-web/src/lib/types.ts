@@ -543,3 +543,11 @@ export interface ProductionResult {
   queued: number[];
   rejected: Record<string, string>;
 }
+
+/** GET /api/v1/content/products/{id}/videos/render-status (204 = no render yet). */
+export interface VideoRenderStatus {
+  status: "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED";
+  runId: number | null;
+  lastError: string | null;
+  finishedAt?: string | null;
+}

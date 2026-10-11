@@ -446,6 +446,8 @@ export const en = {
   "videos.noScript": "No script yet",
   "videos.notRendered": "Not rendered",
   "videos.preconditions": "Video render blocked — fix these first:",
+  "videos.renderRunning": "Videos are being planned in the background - they appear in review when composed.",
+  "videos.renderFailed": "The last video render failed:",
   "videos.missing.script": "Video script",
   "videos.missing.footage": "Accepted footage",
   "videos.missing.pageMain": "Approved main page image",
@@ -486,6 +488,7 @@ export const en = {
   "h3.reason.H3_BUDGET_EXCEEDED": "budget exceeded",
   "h3.reason.H3_CONTENT_REJECTED": "content rejected",
   "h3.reason.H3_FAILED": "API failed",
+  "h3.reason.H3_API_DISABLED": "API switched off",
   "review.filters.VIDEO": "Videos",
   "review.videoScript.hook": "Hook",
   "review.videoScript.caption": "Caption {n}",
@@ -571,6 +574,7 @@ export const en = {
 
   // C5 short-video errors
   "error.VIDEO_PRECONDITIONS": "The video render requirements are not met.",
+  "error.VIDEO_RENDER_IN_PROGRESS": "This video render is already queued or running.",
   "error.VIDEO_SOURCE_TOO_SHORT":
     "The footage is shorter than this video type needs; shorten the body or use another shot.",
   "error.AI_RATIO_EXCEEDED":
