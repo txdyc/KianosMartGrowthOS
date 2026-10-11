@@ -103,6 +103,8 @@ docker compose --profile app up -d --build            # 全容器运行
 - **H3 失败时依次升级**：本地（worker 的 ComfyUIExecutor 执行注册并激活的 `H3_I2V`，`h3.backend` 默认 `LOCAL_FIRST`）→ 接口（api 的 H3JobRunner，`h3.api.enabled=false` 时跳过；接口先用 WireMock 回放验证，真实对接见 C5 计划附录 A）→ 实拍代替（AI 占比归零，`h3.attempts` 与 `h3Fallback.reason` 记录全过程）。视频不会因为 H3 而卡住。worker **不能**领取 `executor=H3` 的任务（接口侧）。
 - **曲库许可证白名单**：`license_type` 只能是 `CC0`、`ROYALTY_FREE_COMMERCIAL`、`OWNED`，`license_source` 和 `license_proof` 必填；需要署名的许可（CC-BY）不允许上传（广告中无法署名）；曲目只能停用（RETIRED）不能删除，因为已有视频的 provenance 引用它们。每条视频同时输出 `_nomusic` 无配乐版本，供 TikTok 使用平台商业曲库。
 - 剪辑按配方（hook 3s → body → captions 5s → endcard 4s，总 15–30 秒），审核页可手动调整 REAL 段入/出点后重新合成；改价后只重渲染结尾卡，只有价格变化（脚本、EDL、配乐、模板、H3 都没变）时自动通过（审计 `VIDEO_AUTO_APPROVED_PRICE_CHANGE`），否则进入审核。
+- **视频规划不在请求里做**：生成和 REGENERATE 只同步检查前置条件，然后入队 `VIDEO_RENDER` 任务（下载、ffmpeg 打分、渲染字幕都在任务里），结果由 `GET .../videos/render-status` 查看。**调整入出点 = 重剪被编辑的那个版本**（`recut`）：复用它记录的全部输入（含 H3 片段、字幕、结尾卡、配乐）和来源记录，不重新下载、打分或选曲；越界检查用该段实际的 `sourceMediaId`，源长度未知直接 422。资产的 `provenance.inputs` 记录的是合成任务实际使用的输入。
+- **改价重渲染完成时价格已不是当前价格**（被后一次改价超过）：直接丢弃，不产生版本（审计 `VIDEO_PRICE_RERENDER_SUPERSEDED`）。H3 每日预算要算上已提交未完成的片段；H3 接口关闭时，排队中的接口片段以 `H3_API_DISABLED` 失败并改用实拍。成片复制用对象存储的服务端 copy，不经过堆内存。被 AI 占比拦截的视频写一条无审核人的 `asset_review`（REJECT，`AI_RATIO_EXCEEDED`）。
 - 文件名 `{SKU}_{type}_{real|mixed}_1080x1920_v{n}.mp4`（含 H3 段为 `mixed`，否则 `real`）；广告导出可选包含视频（ZIP 含 mp4 与 `_nomusic.mp4`，manifest 每个文件一行）。
 
 **C6 批次处理（2026-10-10，规格 §14）**
