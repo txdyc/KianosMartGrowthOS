@@ -105,6 +105,14 @@ docker compose --profile app up -d --build            # 全容器运行
 - 剪辑按配方（hook 3s → body → captions 5s → endcard 4s，总 15–30 秒），审核页可手动调整 REAL 段入/出点后重新合成；改价后只重渲染结尾卡，只有价格变化（脚本、EDL、配乐、模板、H3 都没变）时自动通过（审计 `VIDEO_AUTO_APPROVED_PRICE_CHANGE`），否则进入审核。
 - 文件名 `{SKU}_{type}_{real|mixed}_1080x1920_v{n}.mp4`（含 H3 段为 `mixed`，否则 `real`）；广告导出可选包含视频（ZIP 含 mp4 与 `_nomusic.mp4`，manifest 每个文件一行）。
 
+**C6 批次处理（2026-10-10，规格 §14）**
+- **批次只收 STANDARD SKU**（HERO 的广告图与视频逐个处理）；一个商品同一时间只能在一个进行中的批次里。创建批次时混入 HERO 返回 422 `BATCH_HERO_NOT_ALLOWED`。
+- **阶段永远从实际状态推导**：source_media / generation_run / product_fact_sheet / asset / publication，唯一的实现是 `BatchStageResolver`（纯函数）；批次项只存编排引用（runId、publicationId），不存阶段——批次之外的人工操作（如商品页锁定事实）批次要能看到。
+- **交互任务优先**：交互优先级 0、批次 10，领取顺序 `order by priority, id`；批次流水线的下游任务必须继承 `priority`、`batch_id`、`night_only`；审核页“重新生成”永远是交互任务。夜间窗口（`kiano.batch.night-window` 默认 22:00–07:00，`zone=Africa/Accra`）外不领取批次的 GPU 任务。
+- **生产发布始终由 OWNER 确认**：系统只自动发布 staging（`requestSystem`，SYSTEM/BATCH）；批量生产走 `POST /batches/{id}/publish-production`（仅 OWNER），逐 SKU 照常经过 staging 闸门，任务按 `publish-interval` 错开。
+- **编排器必须幂等**：每个租户一轮 tick 先取 advisory lock，动作依赖现有防重（`PIPELINE_RUNNING`、任务去重键、`PUBLISH_IN_PROGRESS`）；单个 SKU 出错只写 `BATCH_ITEM_BLOCKED(INTERNAL)` 不停批次；清空可空列（staging 引用、blocked 原因）要用显式 `set(...null)`，`updateById` 会忽略 null。
+- **审核时间只累计有效操作时间**：心跳单次 ≤ 20 秒、与上次心跳间隔 > 60 秒的补发增量按 0 计、页面不可见不计时；只有 FACT 和 ASSETS 两种会话都结束过的 SKU 才计入平均（目标 180 秒/SKU）。
+
 **跨仓库**
 - kiano-connector 插件放在 KianosMart 仓库的 `wp-content/plugins/kiano-connector/`，按那个仓库的规则添加 bind mount。
 - 不修改 WordPress 核心和第三方插件。本地 Woo 的配置（例如 `WP_ENVIRONMENT_TYPE=local`）用 WP-CLI 写进本地 volume，不改 KianosMart 仓库的文件。

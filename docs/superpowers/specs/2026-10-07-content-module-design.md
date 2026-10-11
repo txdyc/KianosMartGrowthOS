@@ -406,6 +406,15 @@ DRAFT ──自动预检──▶ IN_REVIEW ──APPROVE──▶ APPROVED ─�
 - Kiano 内建曲库：上传曲目必须填写许可证信息，只接受 `CC0`、`ROYALTY_FREE_COMMERCIAL`、`OWNED`；每条视频同时输出无配乐版本，供 TikTok 使用平台的商用曲库。
 - C5 相对规格的有意扩展：`VIDEO_SCRIPT`（TEXT）与 `LlmPurpose.VIDEO_SCRIPT`、`music_track` 表、`asset.renditions_json`、`generation_job.external_ref`、`comfy_workflow.code` 允许 `H3_I2V`、`JobFailureListener`（任务最终 FAILED 时通知 H3 升级）、广告导出可以选择包含视频。
 
+**C6 确认的决定（2026-10-10 用户确认，详见 `docs/superpowers/plans/2026-10-09-c6-standard-batch.md`）**
+- **自动发布到 staging，生产由 OWNER 批量确认**：SKU 的物料全部通过后，系统以 SYSTEM 身份发布到 staging；看板列出 staging 已成功的 SKU，由 OWNER 勾选后批量发布到生产（生产仍然只有 OWNER 能发布，并且照常经过 staging 闸门）。
+- **优先级加上可选的夜间窗口**：批次的 GPU 任务和平台任务优先级都低于交互任务（交互 0、批次 10）；创建批次时可以勾选“只在夜间窗口运行 GPU 任务”，窗口默认 22:00–07:00（Africa/Accra 时间）。
+- **审核时间 = 事实确认时间 + 物料审核时间**：两个工作台都只累计**有效操作时间**——空闲超过 60 秒的时段不计入，每次心跳最多累加 20 秒，页面不可见时不计时；只有事实与物料两种会话都至少结束过一次的 SKU 才计入平均。验收看每个 SKU 两者之和的平均值 ≤ 180 秒。
+- **批次只收 STANDARD SKU**：HERO 有自己的物料（广告图、视频），继续逐个处理；一个商品同一时间只能在一个进行中的批次里。
+- **阶段一律从实际状态推导，不另外存一份状态**：阶段由 source_media、generation_run、product_fact_sheet、asset、publication 推导，规则唯一的实现是 `BatchStageResolver`（纯函数）；批次项只保存编排时用到的引用（runId、publicationId）和时间戳，所以人在批次之外的操作（例如在商品页手动锁定事实）批次也能看到。
+- **批次运行期间交互任务优先**：批次任务排在交互任务之后；夜间窗口外，批次的 GPU 任务一个都不领取，交互任务照常领取。
+- **staging 必须已有该 SKU**：staging 中缺少这个 SKU 时，批次项变为 `BLOCKED(STAGING_PRODUCT_MISSING)`，用 WooCommerce 自带的 CSV 导出/导入把商品补进本地 staging（操作步骤见 README）；**C6 不实现自动建商品**。
+
 C6 之后：Kiano 核心迁移到 VPS，笔记本保留 kiano-worker；然后按 v1.2 继续 S2–S6。
 
 ## 15. 待确认事项
