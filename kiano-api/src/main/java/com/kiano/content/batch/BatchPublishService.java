@@ -83,8 +83,11 @@ public class BatchPublishService {
                 rejected.put(productId, "NOT_IN_BATCH");
                 continue;
             }
-            if (BatchStageResolver.resolve(snapshot).stage()
-                    != BatchStage.READY_FOR_PRODUCTION) {
+            BatchStageResolver.Resolution resolution = BatchStageResolver.resolve(snapshot);
+            // a FAILED production publish is retried the same way (staging still holds)
+            boolean ready = resolution.stage() == BatchStage.READY_FOR_PRODUCTION
+                    || "PRODUCTION_FAILED".equals(resolution.blockedReason());
+            if (!ready) {
                 rejected.put(productId, "NOT_READY");
                 continue;
             }
@@ -95,10 +98,9 @@ public class BatchPublishService {
                 itemMapper.updateById(item);
                 queued.add(productId);
             } catch (ApiException ex) {
-                if (!"STAGING_REQUIRED".equals(ex.getCode())) {
-                    throw ex;
-                }
-                rejected.put(productId, "STAGING_REQUIRED");
+                // e.g. STAGING_REQUIRED, COPY_POLICY_OUTDATED: reported per SKU,
+                // the SKUs already queued stay queued
+                rejected.put(productId, ex.getCode());
             }
         }
         if (!queued.isEmpty()) {

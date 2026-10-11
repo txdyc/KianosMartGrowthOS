@@ -181,4 +181,56 @@ class BatchStageResolverTest {
 
         assertThat(BatchStageResolver.resolve(relocked).stage()).isEqualTo(BatchStage.GENERATING);
     }
+
+    @Test
+    void stagingProductMissing_isRecognizedFromTheStoredErrorMessage() {
+        // PublishTaskHandler stores the code followed by a human-readable detail
+        ItemSnapshot missing = new ItemSnapshot(7L, true, true, ContentTier.STANDARD, true, false,
+                true, "DONE", 0, "LOCKED", false, false, true,
+                Set.of("PAGE_MAIN", "COPY_TITLE", "COPY_SHORT", "COPY_LONG"), 3, 0, 0,
+                List.of(), "FAILED", "WOO_PRODUCT_NOT_FOUND: no product with sku MG-X", null,
+                null);
+
+        BatchStageResolver.Resolution resolution = BatchStageResolver.resolve(missing);
+
+        assertThat(resolution.stage()).isEqualTo(BatchStage.BLOCKED);
+        assertThat(resolution.blockedReason()).isEqualTo("STAGING_PRODUCT_MISSING");
+    }
+
+    @Test
+    void failedProductionPublish_isItsOwnRetryableReason() {
+        ItemSnapshot productionFailed = new ItemSnapshot(7L, true, true, ContentTier.STANDARD,
+                true, false, true, "DONE", 0, "LOCKED", false, false, true,
+                Set.of("PAGE_MAIN", "COPY_TITLE", "COPY_SHORT", "COPY_LONG"), 3, 0, 0,
+                List.of(), "APPLIED", null, "FAILED", "WOO_TIMEOUT: read timed out");
+
+        BatchStageResolver.Resolution resolution = BatchStageResolver.resolve(productionFailed);
+
+        assertThat(resolution.stage()).isEqualTo(BatchStage.BLOCKED);
+        assertThat(resolution.blockedReason()).isEqualTo("PRODUCTION_FAILED");
+        assertThat(resolution.details()).containsEntry("productionError",
+                "WOO_TIMEOUT: read timed out");
+    }
+
+    @Test
+    void rejectedRequiredAsset_blocksInsteadOfWaitingForever() {
+        // everything was reviewed, the main image was rejected and nothing regenerates it
+        ItemSnapshot rejected = new ItemSnapshot(7L, true, true, ContentTier.STANDARD, true, false,
+                true, "DONE", 0, "LOCKED", false, false, true,
+                Set.of("COPY_TITLE", "COPY_SHORT", "COPY_LONG"), 3, 0, 0,
+                List.of("PAGE_MAIN"), null, null, null, null, Set.of("PAGE_MAIN"));
+
+        BatchStageResolver.Resolution resolution = BatchStageResolver.resolve(rejected);
+
+        assertThat(resolution.stage()).isEqualTo(BatchStage.BLOCKED);
+        assertThat(resolution.blockedReason()).isEqualTo("ASSET_REJECTED");
+        assertThat(resolution.details()).containsEntry("specs", List.of("PAGE_MAIN"));
+
+        // still missing but never rejected (e.g. the pipeline has not run yet): generating
+        ItemSnapshot notYet = new ItemSnapshot(7L, true, true, ContentTier.STANDARD, true, false,
+                true, null, 0, "LOCKED", false, false, true,
+                Set.of("COPY_TITLE", "COPY_SHORT", "COPY_LONG"), 0, 0, 0,
+                List.of("PAGE_MAIN", "PAGE_ANGLE x3 (have 0)"), null, null, null, null, Set.of());
+        assertThat(BatchStageResolver.resolve(notYet).stage()).isEqualTo(BatchStage.GENERATING);
+    }
 }

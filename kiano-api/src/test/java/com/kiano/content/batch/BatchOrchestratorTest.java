@@ -64,6 +64,9 @@ class BatchOrchestratorTest {
     private GenerationJobStore jobs;
 
     @Autowired
+    private com.kiano.content.generation.GenerationRunStore runs;
+
+    @Autowired
     private PolicyService policyService;
 
     @Autowired
@@ -258,8 +261,76 @@ class BatchOrchestratorTest {
                 .filter(item -> item.getProductId() == broken).findFirst().orElseThrow();
         BatchItemEntity healthyItem = items.stream()
                 .filter(item -> item.getProductId() == healthy).findFirst().orElseThrow();
-        assertThat(brokenItem.getBlockedReason()).isEqualTo("INTERNAL");
+        // the business error's own code says what to fix (here: re-render the copy)
+        assertThat(brokenItem.getBlockedReason()).isEqualTo("COPY_POLICY_OUTDATED");
         assertThat(healthyItem.getStagingPublicationId()).isNotNull();
+    }
+
+    @Test
+    void scheduledRound_oneItemsPublishError_doesNotRollBackTheOthers() {
+        // tickOnce wraps the tenant round in a transaction (the production path):
+        // the broken SKU's error must not poison the whole round
+        long broken = publishableProduct("MG-STD1", 0);
+        long healthy = publishableProduct("MG-STD2");
+        long fresh = readyProduct("MG-STD3");
+        batches.create(user, "Spring", List.of(broken, healthy, fresh), false);
+
+        orchestrator.tickOnce();
+
+        BatchItemEntity brokenItem = item(broken);
+        assertThat(brokenItem.getBlockedReason()).isEqualTo("COPY_POLICY_OUTDATED");
+        assertThat(item(healthy).getStagingPublicationId()).isNotNull();
+        assertThat(item(fresh).getImageRunId()).isNotNull();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from publication "
+                + "where tenant_id = ? and product_id = ?", Integer.class, tenantId, healthy))
+                .isEqualTo(1);
+    }
+
+    @Test
+    void scheduledRound_pipelineStartedOutsideTheBatch_isAdopted() {
+        long product = readyProduct("MG-STD1");
+        long other = readyProduct("MG-STD2");
+        long manualRun = pipeline.start(user, product); // started from the product page
+        batches.create(user, "Spring", List.of(product, other), false);
+
+        orchestrator.tickOnce();
+
+        assertThat(item(product).getImageRunId()).isEqualTo(manualRun);
+        assertThat(item(other).getImageRunId()).isNotNull();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from generation_run "
+                + "where tenant_id = ?", Integer.class, tenantId)).isEqualTo(2);
+    }
+
+    @Test
+    void runningPipelinesAreCountedBeforeNewOnesStart() {
+        properties.setMaxActivePipelines(3);
+        List<Long> waiting = List.of(readyProduct("MG-W1"), readyProduct("MG-W2"),
+                readyProduct("MG-W3"));
+        List<Long> running = List.of(readyProduct("MG-R1"), readyProduct("MG-R2"),
+                readyProduct("MG-R3"));
+        List<Long> all = new java.util.ArrayList<>(waiting);
+        all.addAll(running);
+        batches.create(user, "Spring", all, false);
+        // the three later items already run their pipelines (e.g. their shots came first)
+        for (long productId : running) {
+            long runId = runs.create(tenantId, productId, null);
+            jdbcTemplate.update("update content_batch_item set image_run_id = ? "
+                    + "where product_id = ?", runId, productId);
+        }
+
+        orchestrator.tickOnce();
+
+        // three pipelines are already active: none of the earlier items may start
+        assertThat(jdbcTemplate.queryForObject("select count(*) from generation_run "
+                + "where tenant_id = ?", Integer.class, tenantId)).isEqualTo(3);
+        for (long productId : waiting) {
+            assertThat(item(productId).getImageRunId()).isNull();
+        }
+    }
+
+    private BatchItemEntity item(long productId) {
+        return items().stream().filter(row -> row.getProductId() == productId).findFirst()
+                .orElseThrow();
     }
 
     @Test

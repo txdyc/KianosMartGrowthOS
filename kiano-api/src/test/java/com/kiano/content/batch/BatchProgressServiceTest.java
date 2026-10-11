@@ -148,6 +148,24 @@ class BatchProgressServiceTest {
     }
 
     @Test
+    void progress_showsTheErrorTheOrchestratorRecordedForAFailedAction() {
+        long staged = publishableProduct("MG-STD1");
+        long batchId = batches.create(user, "Spring", List.of(staged), false).id();
+        // the last tick's staging request failed with a business error
+        jdbcTemplate.update("update content_batch_item set blocked_reason = 'COPY_POLICY_OUTDATED', "
+                + "blocked_details = '{\"message\":\"re-render the copy\"}'::jsonb "
+                + "where product_id = ?", staged);
+
+        BatchProgressService.BatchProgress progress = progressService.progress(tenantId, batchId);
+
+        BatchProgressService.ItemRow row = progress.items().get(0);
+        assertThat(row.stage()).isEqualTo(BatchStage.BLOCKED);
+        assertThat(row.blockedReason()).isEqualTo("COPY_POLICY_OUTDATED");
+        assertThat(row.blockedDetails()).containsEntry("message", "re-render the copy");
+        assertThat(progress.stageCounts()).containsEntry(BatchStage.BLOCKED, 1);
+    }
+
+    @Test
     void progress_costOnlyCountsBatchProductsSinceCreation() {
         long inBatch = readyProduct("MG-STD1");
         long outside = product("MG-STD2");

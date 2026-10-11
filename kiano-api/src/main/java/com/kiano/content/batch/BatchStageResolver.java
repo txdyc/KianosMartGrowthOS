@@ -40,7 +40,25 @@ public final class BatchStageResolver {
             @Nullable String stagingStatus,
             @Nullable String stagingError,
             @Nullable String productionStatus,
-            @Nullable String productionError) {
+            @Nullable String productionError,
+            /** Specs whose newest version was REJECTED and that have no live version. */
+            Set<String> rejectedSpecs) {
+
+        /** Without rejected specs (most fixtures and callers). */
+        public ItemSnapshot(long productId, boolean productExists, boolean topLevel,
+                ContentTier tier, boolean shotsComplete, boolean reshoot, boolean hasFactSources,
+                @Nullable String imageRunStatus, int failedImageJobs, @Nullable String factStatus,
+                boolean factDraftRunning, boolean factDraftFailed, boolean policyComplete,
+                Set<String> liveSpecCodes, long liveAngleCount, int assetsInReview,
+                int assetsGenerating, List<String> missingRequired, @Nullable String stagingStatus,
+                @Nullable String stagingError, @Nullable String productionStatus,
+                @Nullable String productionError) {
+            this(productId, productExists, topLevel, tier, shotsComplete, reshoot, hasFactSources,
+                    imageRunStatus, failedImageJobs, factStatus, factDraftRunning, factDraftFailed,
+                    policyComplete, liveSpecCodes, liveAngleCount, assetsInReview, assetsGenerating,
+                    missingRequired, stagingStatus, stagingError, productionStatus, productionError,
+                    Set.of());
+        }
     }
 
     /** The derived stage plus the two lanes the dashboard shows. */
@@ -95,8 +113,13 @@ public final class BatchStageResolver {
         } else if (s.assetsInReview() > 0) {
             stage = BatchStage.IN_REVIEW;
         } else if (!s.missingRequired().isEmpty()) {
-            // everything reviewed but required content is still missing
-            // (e.g. a rejected asset): generation has to run again
+            List<String> rejected = rejectedMissing(s);
+            if (!rejected.isEmpty()) {
+                // nothing regenerates a rejected asset on its own: a human has to
+                return new Resolution(BatchStage.BLOCKED, "ASSET_REJECTED",
+                        Map.of("specs", rejected), imageLane, factLane);
+            }
+            // required content not produced yet (pipeline or copy still to run)
             stage = BatchStage.GENERATING;
         } else if (!s.policyComplete()) {
             return new Resolution(BatchStage.BLOCKED, "POLICY_INCOMPLETE", Map.of(),
@@ -140,13 +163,30 @@ public final class BatchStageResolver {
         if (s.factStatus() == null && s.factDraftFailed()) {
             return "FACT_DRAFT_FAILED";
         }
-        if ("WOO_PRODUCT_NOT_FOUND".equals(s.stagingError())) {
+        // PublishTaskHandler stores "WOO_PRODUCT_NOT_FOUND: <detail>"
+        if ("FAILED".equals(s.stagingStatus()) && s.stagingError() != null
+                && s.stagingError().startsWith("WOO_PRODUCT_NOT_FOUND")) {
             return "STAGING_PRODUCT_MISSING";
         }
-        if ("FAILED".equals(s.stagingStatus()) || "FAILED".equals(s.productionStatus())) {
+        if ("FAILED".equals(s.stagingStatus())) {
             return "PUBLISH_FAILED";
         }
+        if ("FAILED".equals(s.productionStatus())) {
+            // staging is fine: the OWNER retries the production publish
+            return "PRODUCTION_FAILED";
+        }
         return null;
+    }
+
+    /** Missing required specs (PAGE_ANGLE counts by spec) whose newest version was rejected. */
+    private static List<String> rejectedMissing(ItemSnapshot s) {
+        if (s.rejectedSpecs() == null || s.rejectedSpecs().isEmpty()) {
+            return List.of();
+        }
+        return s.missingRequired().stream()
+                .map(missing -> missing.split(" ")[0])
+                .filter(s.rejectedSpecs()::contains)
+                .toList();
     }
 
     private static Map<String, Object> blockedDetails(ItemSnapshot s, String reason) {
@@ -157,6 +197,11 @@ public final class BatchStageResolver {
                 if (s.stagingError() != null) {
                     details.put("stagingError", s.stagingError());
                 }
+                if (s.productionError() != null) {
+                    details.put("productionError", s.productionError());
+                }
+            }
+            case "PRODUCTION_FAILED" -> {
                 if (s.productionError() != null) {
                     details.put("productionError", s.productionError());
                 }

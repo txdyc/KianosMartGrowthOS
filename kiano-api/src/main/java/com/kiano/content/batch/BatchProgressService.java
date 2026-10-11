@@ -21,6 +21,8 @@ import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * The dashboard data of one batch (C6 Task 4): stage counts, one row per SKU
@@ -52,11 +54,12 @@ public class BatchProgressService {
     private final PipelineProperties pipelineProperties;
     private final ProductCatalog productCatalog;
     private final JdbcTemplate jdbcTemplate;
+    private final ObjectMapper objectMapper;
 
     public BatchProgressService(BatchService batchService, BatchSnapshotReader snapshotReader,
             ReviewSessionService reviewSessions, BatchProperties properties,
             PipelineProperties pipelineProperties, ProductCatalog productCatalog,
-            JdbcTemplate jdbcTemplate) {
+            JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
         this.batchService = batchService;
         this.snapshotReader = snapshotReader;
         this.reviewSessions = reviewSessions;
@@ -64,6 +67,7 @@ public class BatchProgressService {
         this.pipelineProperties = pipelineProperties;
         this.productCatalog = productCatalog;
         this.jdbcTemplate = jdbcTemplate;
+        this.objectMapper = objectMapper;
     }
 
     public BatchProgress progress(long tenantId, long batchId) {
@@ -83,6 +87,7 @@ public class BatchProgressService {
                     ? new Resolution(BatchStage.BLOCKED, "PRODUCT_GONE", Map.of(),
                             BatchStage.WAITING_SHOTS, BatchStage.FACTS_DRAFTING)
                     : BatchStageResolver.resolve(snapshot);
+            resolution = withRecordedError(item, resolution);
             stageCounts.merge(resolution.stage(), 1, Integer::sum);
             ProductView product = productCatalog.findById(tenantId, item.getProductId())
                     .orElse(null);
@@ -101,6 +106,25 @@ public class BatchProgressService {
                 stageCounts, rows, eta(tenantId, batch, items, ordered, resolutions),
                 llmCostUsd(tenantId, batch), gpuSecondsUsed(tenantId, batchId),
                 reviewSessions.stats(tenantId, batchId));
+    }
+
+    /**
+     * A failed automatic action (e.g. the staging request threw
+     * COPY_POLICY_OUTDATED) is not visible in the snapshot: the orchestrator
+     * stores its code on the item, and the dashboard shows it until the next
+     * successful tick clears it.
+     */
+    private Resolution withRecordedError(BatchItemEntity item, Resolution resolution) {
+        if (resolution.stage() == BatchStage.BLOCKED || item.getBlockedReason() == null) {
+            return resolution;
+        }
+        Map<String, Object> details = Map.of();
+        if (item.getBlockedDetails() != null) {
+            details = objectMapper.readValue(item.getBlockedDetails(),
+                    new TypeReference<Map<String, Object>>() { });
+        }
+        return new Resolution(BatchStage.BLOCKED, item.getBlockedReason(), details,
+                resolution.imageLane(), resolution.factLane());
     }
 
     /** The three estimates of the batch's remaining work. */

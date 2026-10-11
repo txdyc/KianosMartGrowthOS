@@ -45,6 +45,7 @@ public class ReviewSessionService {
             Set.of("LOCKED", "APPROVED_ALL", "SKIPPED", "LEFT");
     private static final double MAX_DELTA_SECONDS = 20;
     private static final long SILENCE_SECONDS = 60;
+    private static final double ELAPSED_TOLERANCE_SECONDS = 1;
 
     private final ReviewSessionMapper mapper;
     private final ProductCatalog productCatalog;
@@ -80,7 +81,8 @@ public class ReviewSessionService {
 
     /**
      * Adds the active seconds since the last beat: clamped to [0, 20], and 0
-     * when more than 60 s passed since the last heartbeat.
+     * when more than 60 s passed since the last heartbeat; never more than the
+     * time actually elapsed since that heartbeat.
      */
     @Transactional
     public SessionView heartbeat(CurrentUser user, long sessionId, double activeSecondsDelta) {
@@ -100,7 +102,8 @@ public class ReviewSessionService {
                     "outcome must be one of " + OUTCOMES);
         }
         ReviewSessionEntity session = owned(user, sessionId);
-        session.setActiveSeconds(session.getActiveSeconds() + clamp(finalDelta));
+        session.setActiveSeconds(session.getActiveSeconds()
+                + heartbeatDelta(session, finalDelta));
         session.setFinishedAt(OffsetDateTime.now(ZoneOffset.UTC));
         session.setOutcome(outcome);
         mapper.updateById(session);
@@ -139,7 +142,9 @@ public class ReviewSessionService {
     private ReviewSessionEntity owned(CurrentUser user, long sessionId) {
         ReviewSessionEntity session = mapper.selectOne(Wrappers.<ReviewSessionEntity>lambdaQuery()
                 .eq(ReviewSessionEntity::getTenantId, user.tenantId())
-                .eq(ReviewSessionEntity::getId, sessionId));
+                .eq(ReviewSessionEntity::getId, sessionId)
+                // concurrent beats of one session queue up instead of losing updates
+                .last("for update"));
         if (session == null || !session.getUserId().equals(user.userId())) {
             throw new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Review session not found");
         }
@@ -151,12 +156,16 @@ public class ReviewSessionService {
     }
 
     private static double heartbeatDelta(ReviewSessionEntity session, double raw) {
-        Instant last = session.getLastHeartbeatAt().toInstant();
-        if (Duration.between(last, Instant.now()).getSeconds() > SILENCE_SECONDS) {
+        Duration elapsed = Duration.between(session.getLastHeartbeatAt().toInstant(),
+                Instant.now());
+        if (elapsed.getSeconds() > SILENCE_SECONDS) {
             // a suspended tab back-fills its delta: it does not count
             return 0;
         }
-        return clamp(raw);
+        // never more than the wall clock since the last beat (+1 s for jitter):
+        // a retried or duplicated beat cannot book the same seconds twice
+        double bound = elapsed.toMillis() / 1000.0 + ELAPSED_TOLERANCE_SECONDS;
+        return Math.min(clamp(raw), bound);
     }
 
     private static double clamp(double delta) {

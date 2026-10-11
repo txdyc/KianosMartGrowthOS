@@ -150,6 +150,50 @@ class BatchServiceTest {
     }
 
     @Test
+    void create_duplicateProductIds_422InsteadOf500() {
+        long pid = product("MG-STD1", null);
+
+        assertThatThrownBy(() -> batches.create(user, "Spring", List.of(pid, pid), false))
+                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                    assertThat(ex.getStatus().value()).isEqualTo(422);
+                    assertThat(ex.getCode()).isEqualTo("VALIDATION_FAILED");
+                    assertThat(ex.getDetails()).containsEntry("duplicates", List.of(pid));
+                });
+    }
+
+    @Test
+    void concurrentCreates_neverPutOneProductInTwoActiveBatches() throws Exception {
+        long pid = product("MG-STD1", null);
+        java.util.concurrent.ExecutorService pool =
+                java.util.concurrent.Executors.newFixedThreadPool(2);
+        java.util.concurrent.CountDownLatch go = new java.util.concurrent.CountDownLatch(1);
+        java.util.List<java.util.concurrent.Future<Object>> futures = new java.util.ArrayList<>();
+        try {
+            for (String name : List.of("A", "B")) {
+                futures.add(pool.submit(() -> {
+                    go.await();
+                    try {
+                        return batches.create(user, name, List.of(pid), false);
+                    } catch (ApiException ex) {
+                        return ex.getCode();
+                    }
+                }));
+            }
+            go.countDown();
+            List<Object> outcomes = new java.util.ArrayList<>();
+            for (var future : futures) {
+                outcomes.add(future.get());
+            }
+            assertThat(outcomes).filteredOn(o -> o instanceof BatchView).hasSize(1);
+            assertThat(outcomes).contains("PRODUCT_IN_ACTIVE_BATCH");
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(jdbcTemplate.queryForObject("select count(*) from content_batch_item "
+                + "where product_id = ?", Integer.class, pid)).isEqualTo(1);
+    }
+
+    @Test
     void cancel_cancelsOnlyUnleasedBatchJobs_keepsAssets() {
         long pid = product("MG-STD1", null);
         BatchView batch = batches.create(user, "Spring", List.of(pid), false);

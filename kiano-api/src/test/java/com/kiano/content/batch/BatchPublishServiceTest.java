@@ -78,6 +78,40 @@ class BatchPublishServiceTest extends BatchTestSupport {
     }
 
     @Test
+    void publishProduction_oneSkusPublishError_isReportedPerSku_othersStillQueued() {
+        long healthy = publishableProduct("MG-STD1");
+        long outdated = publishableProduct("MG-STD2");
+        for (long product : List.of(healthy, outdated)) {
+            publication(product, "STAGING", "APPLIED", approvedAssetIds(product), null);
+        }
+        // the policy changed after outdated's long copy was rendered
+        jdbcTemplate.update("update asset set content_json = '{\"policyVersion\":0}'::jsonb "
+                + "where product_id = ? and spec_code = 'COPY_LONG'", outdated);
+        long batchId = batches.create(operator, "Spring", List.of(outdated, healthy), false).id();
+
+        ProductionResult result = publishService.publishProduction(owner, batchId,
+                List.of(outdated, healthy));
+
+        assertThat(result.queued()).containsExactly(healthy);
+        assertThat(result.rejected()).containsEntry(outdated, "COPY_POLICY_OUTDATED");
+    }
+
+    @Test
+    void publishProduction_retriesAFailedProductionPublish() {
+        long product = publishableProduct("MG-STD1");
+        publication(product, "STAGING", "APPLIED", approvedAssetIds(product), null);
+        publication(product, "PRODUCTION", "FAILED", approvedAssetIds(product),
+                "WOO_TIMEOUT: read timed out");
+        long batchId = batches.create(operator, "Spring", List.of(product), false).id();
+
+        ProductionResult result = publishService.publishProduction(owner, batchId, List.of(product));
+
+        assertThat(result.queued()).containsExactly(product);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from publication where "
+                + "environment = 'PRODUCTION' and status = 'PENDING'", Integer.class)).isEqualTo(1);
+    }
+
+    @Test
     void publishProduction_stagingGateStillEnforced() {
         long product = publishableProduct("MG-STD1");
         // the staging publish recorded a different asset set

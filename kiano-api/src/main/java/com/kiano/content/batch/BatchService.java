@@ -17,10 +17,13 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -50,10 +53,12 @@ public class BatchService {
     private final ShotStatusService shotStatusService;
     private final GenerationJobStore jobs;
     private final AuditLog auditLog;
+    private final JdbcTemplate jdbcTemplate;
 
     public BatchService(BatchMapper batchMapper, BatchItemMapper itemMapper,
             ProductCatalog productCatalog, ProductProfileService profileService,
-            ShotStatusService shotStatusService, GenerationJobStore jobs, AuditLog auditLog) {
+            ShotStatusService shotStatusService, GenerationJobStore jobs, AuditLog auditLog,
+            JdbcTemplate jdbcTemplate) {
         this.batchMapper = batchMapper;
         this.itemMapper = itemMapper;
         this.productCatalog = productCatalog;
@@ -61,6 +66,7 @@ public class BatchService {
         this.shotStatusService = shotStatusService;
         this.jobs = jobs;
         this.auditLog = auditLog;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     @Transactional
@@ -73,6 +79,19 @@ public class BatchService {
         if (productIds == null || productIds.isEmpty()) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "VALIDATION_FAILED",
                     "Select at least one product", Map.of("productIds", List.of()));
+        }
+        Set<Long> seen = new LinkedHashSet<>();
+        Set<Long> duplicates = new LinkedHashSet<>();
+        for (Long productId : productIds) {
+            if (!seen.add(productId)) {
+                duplicates.add(productId);
+            }
+        }
+        if (!duplicates.isEmpty()) {
+            // the unique (batch_id, product_id) key would otherwise surface as a 500
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "VALIDATION_FAILED",
+                    "Each product can be selected only once",
+                    Map.of("duplicates", List.copyOf(duplicates)));
         }
         List<Long> notTopLevel = new ArrayList<>();
         List<Long> notStandard = new ArrayList<>();
@@ -96,6 +115,10 @@ public class BatchService {
                     "Batches carry STANDARD products only; HERO products are processed on their own",
                     Map.of("productIds", notStandard));
         }
+        // two concurrent creates of the tenant are serialized: the second one
+        // sees the first one's items and gets PRODUCT_IN_ACTIVE_BATCH
+        jdbcTemplate.queryForObject("select pg_advisory_xact_lock(hashtext(?))::text",
+                String.class, "kiano-batch-create:" + tenantId);
         Map<Long, Long> activeBatches = activeBatchByProduct(tenantId);
         List<Long> inBatch = productIds.stream()
                 .filter(activeBatches::containsKey).toList();

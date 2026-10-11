@@ -87,17 +87,68 @@ class ReviewSessionServiceTest {
     void heartbeat_clampsDeltaTo20s_andIgnoresAfterSilenceOver60s() {
         long session = sessions.start(user, productA, batchId, "FACT");
 
+        // beats arrive every ~20 s of wall clock, as the workbench sends them
+        beatAgo(session, 20);
         assertThat(sessions.heartbeat(user, session, 15).activeSeconds()).isEqualTo(15.0);
+        beatAgo(session, 20);
         assertThat(sessions.heartbeat(user, session, 99).activeSeconds()).isEqualTo(35.0);
+        beatAgo(session, 20);
         assertThat(sessions.heartbeat(user, session, -5).activeSeconds()).isEqualTo(35.0);
 
         // the tab was suspended: the back-filled delta does not count
-        jdbcTemplate.update("update review_session set last_heartbeat_at = now() "
-                + "- interval '61 seconds' where id = ?", session);
+        beatAgo(session, 61);
         assertThat(sessions.heartbeat(user, session, 15).activeSeconds()).isEqualTo(35.0);
 
         // the next beat is measured from that heartbeat again
+        beatAgo(session, 20);
         assertThat(sessions.heartbeat(user, session, 10).activeSeconds()).isEqualTo(45.0);
+    }
+
+    @Test
+    void heartbeat_creditNeverExceedsTheWallClockSinceTheLastBeat() {
+        long session = sessions.start(user, productA, batchId, "FACT");
+        beatAgo(session, 15);
+        assertThat(sessions.heartbeat(user, session, 15).activeSeconds()).isEqualTo(15.0);
+
+        // a duplicated/retried beat right after: at most the ~1 s tolerance is added
+        double total = sessions.heartbeat(user, session, 15).activeSeconds();
+
+        assertThat(total).isLessThan(16.5);
+    }
+
+    @Test
+    void concurrentHeartbeats_neverLoseAnUpdate() throws Exception {
+        long session = sessions.start(user, productA, batchId, "FACT");
+        beatAgo(session, 30);
+        int beats = 8;
+        java.util.concurrent.ExecutorService pool =
+                java.util.concurrent.Executors.newFixedThreadPool(beats);
+        java.util.concurrent.CountDownLatch go = new java.util.concurrent.CountDownLatch(1);
+        java.util.List<java.util.concurrent.Future<?>> futures = new java.util.ArrayList<>();
+        try {
+            for (int i = 0; i < beats; i++) {
+                futures.add(pool.submit(() -> {
+                    go.await();
+                    return sessions.heartbeat(user, session, 0.5);
+                }));
+            }
+            go.countDown();
+            for (java.util.concurrent.Future<?> future : futures) {
+                future.get();
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+
+        Double stored = jdbcTemplate.queryForObject(
+                "select active_seconds from review_session where id = ?", Double.class, session);
+        assertThat(stored).isEqualTo(beats * 0.5);
+    }
+
+    /** Pretends the previous heartbeat was {@code seconds} ago. */
+    private void beatAgo(long session, int seconds) {
+        jdbcTemplate.update("update review_session set last_heartbeat_at = now() "
+                + "- make_interval(secs => ?) where id = ?", seconds, session);
     }
 
     @Test

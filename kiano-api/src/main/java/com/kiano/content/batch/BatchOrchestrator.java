@@ -25,6 +25,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
 
@@ -55,6 +56,7 @@ public class BatchOrchestrator {
     private final ObjectMapper objectMapper;
     private final JdbcTemplate jdbcTemplate;
     private final TransactionTemplate transactionTemplate;
+    private final TransactionTemplate itemTransaction;
 
     public BatchOrchestrator(BatchProperties properties, BatchMapper batchMapper,
             BatchItemMapper itemMapper, BatchSnapshotReader snapshotReader, PipelineService pipeline,
@@ -73,6 +75,12 @@ public class BatchOrchestrator {
         this.objectMapper = objectMapper;
         this.jdbcTemplate = jdbcTemplate;
         this.transactionTemplate = transactionTemplate;
+        // each item commits or rolls back on its own: a business error of one
+        // SKU (e.g. COPY_POLICY_OUTDATED) must not undo the round's other work
+        this.itemTransaction = new TransactionTemplate(
+                java.util.Objects.requireNonNull(transactionTemplate.getTransactionManager()));
+        this.itemTransaction.setPropagationBehavior(
+                TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
     @Scheduled(fixedDelayString = "${kiano.batch.tick:30s}",
@@ -123,30 +131,51 @@ public class BatchOrchestrator {
         }
         Map<Long, ItemSnapshot> snapshots = snapshotReader.read(tenantId, items);
         Round round = new Round();
+        // pipelines already running count against the cap before any item starts one
+        for (BatchItemEntity item : items) {
+            ItemSnapshot snapshot = snapshots.get(item.getProductId());
+            if (snapshot != null && "RUNNING".equals(snapshot.imageRunStatus())) {
+                round.activePipelines++;
+            }
+        }
         boolean allDone = true;
         for (BatchItemEntity item : items) {
             ItemSnapshot snapshot = snapshots.get(item.getProductId());
+            if (snapshot == null) {
+                itemTransaction.executeWithoutResult(status ->
+                        recordBlocked(tenantId, batch, item, "PRODUCT_GONE", Map.of()));
+                allDone = false;
+                continue;
+            }
             try {
-                if (snapshot == null) {
-                    recordBlocked(tenantId, batch, item, "PRODUCT_GONE", Map.of());
-                    allDone = false;
-                    continue;
-                }
-                tickItem(tenantId, batch, item, snapshot, round);
-                Resolution resolution = BatchStageResolver.resolve(snapshot);
-                if (resolution.stage() != BatchStage.DONE) {
-                    allDone = false;
-                } else if (item.getDoneAt() == null) {
-                    item.setDoneAt(OffsetDateTime.now(ZoneOffset.UTC));
-                    itemMapper.updateById(item);
-                }
+                itemTransaction.executeWithoutResult(status ->
+                        tickItem(tenantId, batch, item, snapshot, round));
+            } catch (ApiException ex) {
+                // a business error says what to fix: keep its code (Review Focus 3)
+                log.warn("Batch {} item {} blocked: {}", batch.getId(), item.getProductId(),
+                        ex.getCode());
+                Map<String, Object> details = new java.util.LinkedHashMap<>(ex.getDetails());
+                details.put("message", String.valueOf(ex.getMessage()));
+                itemTransaction.executeWithoutResult(status ->
+                        recordBlocked(tenantId, batch, item, ex.getCode(), details));
+                allDone = false;
+                continue;
             } catch (RuntimeException ex) {
                 // one broken item must not stop the other SKUs (Review Focus 3)
                 log.warn("Batch {} item {} failed: {}", batch.getId(), item.getProductId(),
                         ex.getMessage());
-                recordBlocked(tenantId, batch, item, "INTERNAL",
-                        Map.of("error", String.valueOf(ex.getMessage())));
+                itemTransaction.executeWithoutResult(status -> recordBlocked(tenantId, batch, item,
+                        "INTERNAL", Map.of("error", String.valueOf(ex.getMessage()))));
                 allDone = false;
+                continue;
+            }
+            Resolution resolution = BatchStageResolver.resolve(snapshot);
+            if (resolution.stage() != BatchStage.DONE) {
+                allDone = false;
+            } else if (item.getDoneAt() == null) {
+                itemMapper.update(null, Wrappers.<BatchItemEntity>lambdaUpdate()
+                        .eq(BatchItemEntity::getId, item.getId())
+                        .set(BatchItemEntity::getDoneAt, OffsetDateTime.now(ZoneOffset.UTC)));
             }
         }
         if (allDone) {
@@ -176,10 +205,12 @@ public class BatchOrchestrator {
                     .set(BatchItemEntity::getBlockedReason, null)
                     .set(BatchItemEntity::getBlockedDetails, null));
         }
-        if (item.getImageRunId() != null && "RUNNING".equals(snapshot.imageRunStatus())) {
-            round.activePipelines++;
+        // 1a. a pipeline started outside the batch (product page) is adopted;
+        // it was already counted as active before the round
+        if (item.getImageRunId() == null && "RUNNING".equals(snapshot.imageRunStatus())) {
+            adoptRunningPipeline(tenantId, batch, item);
         }
-        // 1. start the image pipeline (max-active-pipelines at a time)
+        // 1b. start the image pipeline (max-active-pipelines at a time)
         if (snapshot.shotsComplete() && item.getImageRunId() == null
                 && resolution.imageLane() != BatchStage.IMAGES) {
             if (round.activePipelines >= properties.getMaxActivePipelines()) {
@@ -217,24 +248,22 @@ public class BatchOrchestrator {
 
     private long startPipeline(long tenantId, BatchEntity batch, BatchItemEntity item) {
         boolean nightOnly = Boolean.TRUE.equals(batch.getNightOnly());
-        try {
-            long runId = pipeline.startForBatch(tenantId, item.getProductId(), batch.getId(),
-                    nightOnly);
+        long runId = pipeline.startForBatch(tenantId, item.getProductId(), batch.getId(),
+                nightOnly);
+        audit(tenantId, "BATCH_PIPELINE_STARTED", batch,
+                Map.of("productId", item.getProductId(), "runId", runId, "nightOnly", nightOnly));
+        return runId;
+    }
+
+    private void adoptRunningPipeline(long tenantId, BatchEntity batch, BatchItemEntity item) {
+        runs.latest(tenantId, item.getProductId()).ifPresent(run -> {
+            item.setImageRunId(run.id());
+            itemMapper.update(null, Wrappers.<BatchItemEntity>lambdaUpdate()
+                    .eq(BatchItemEntity::getId, item.getId())
+                    .set(BatchItemEntity::getImageRunId, run.id()));
             audit(tenantId, "BATCH_PIPELINE_STARTED", batch,
-                    Map.of("productId", item.getProductId(), "runId", runId,
-                            "nightOnly", nightOnly));
-            return runId;
-        } catch (ApiException ex) {
-            if (!"PIPELINE_RUNNING".equals(ex.getCode())) {
-                throw ex;
-            }
-            // someone started a pipeline outside the batch: adopt that run
-            long runId = runs.latest(tenantId, item.getProductId())
-                    .orElseThrow(() -> ex).id();
-            audit(tenantId, "BATCH_PIPELINE_STARTED", batch,
-                    Map.of("productId", item.getProductId(), "runId", runId, "adopted", true));
-            return runId;
-        }
+                    Map.of("productId", item.getProductId(), "runId", run.id(), "adopted", true));
+        });
     }
 
     private void queueFactDraft(long tenantId, BatchEntity batch, BatchItemEntity item,
@@ -282,7 +311,12 @@ public class BatchOrchestrator {
         }
         item.setBlockedReason(reason);
         item.setBlockedDetails(objectMapper.writeValueAsString(details));
-        itemMapper.updateById(item);
+        // only the blocked columns: other fields of the entity may hold values of
+        // an item transaction that was just rolled back
+        itemMapper.update(null, Wrappers.<BatchItemEntity>lambdaUpdate()
+                .eq(BatchItemEntity::getId, item.getId())
+                .set(BatchItemEntity::getBlockedReason, reason)
+                .set(BatchItemEntity::getBlockedDetails, item.getBlockedDetails()));
         audit(tenantId, "BATCH_ITEM_BLOCKED", batch,
                 Map.of("productId", item.getProductId(), "reason", String.valueOf(reason),
                         "details", details));
