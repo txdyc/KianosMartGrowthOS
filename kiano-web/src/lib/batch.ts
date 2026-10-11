@@ -1,3 +1,4 @@
+import { en } from "@/i18n/en";
 import type { MessageKey } from "@/i18n/shared";
 import type { BatchItemRow, BatchStage, ReviewTimeStats } from "./types";
 
@@ -27,9 +28,19 @@ export function stageLabelKey(stage: BatchStage): MessageKey {
   return `batch.stage.${stage}` as MessageKey;
 }
 
-/** i18n key of one blocked reason code (INTERNAL included). */
+/**
+ * i18n key of one blocked reason code (INTERNAL included). A failed automatic
+ * action records the business error's own code (e.g. COPY_POLICY_OUTDATED):
+ * its `error.*` text is shown, and a code without any text falls back to the
+ * generic internal reason.
+ */
 export function blockedReasonKey(code: string): MessageKey {
-  return `batch.blocked.${code}` as MessageKey;
+  const reasonKey = `batch.blocked.${code}` as MessageKey;
+  if (reasonKey in en) {
+    return reasonKey;
+  }
+  const errorKey = `error.${code}` as MessageKey;
+  return errorKey in en ? errorKey : "batch.blocked.INTERNAL";
 }
 
 /** "2h 15m", "15m 30s", "45s" — negative values clamp to "0s". */
@@ -64,10 +75,15 @@ export function funnel(
   });
 }
 
-/** The READY_FOR_PRODUCTION SKUs the OWNER may select for production. */
+/** The SKUs the OWNER may select for production (ready, or a failed production retry). */
 export function selectableForProduction(items: BatchItemRow[]): number[] {
   return items
-    .filter((item) => item.stage === "READY_FOR_PRODUCTION")
+    .filter(
+      (item) =>
+        item.stage === "READY_FOR_PRODUCTION" ||
+        // a FAILED production publish is retried by the same OWNER action
+        (item.stage === "BLOCKED" && item.blockedReason === "PRODUCTION_FAILED"),
+    )
     .map((item) => item.productId);
 }
 

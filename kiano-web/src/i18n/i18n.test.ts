@@ -145,6 +145,8 @@ test("dictionary covers every backend enum and error code", () => {
     "FACT_DRAFT_FAILED",
     "STAGING_PRODUCT_MISSING",
     "PUBLISH_FAILED",
+    "PRODUCTION_FAILED",
+    "ASSET_REJECTED",
     "POLICY_INCOMPLETE",
     "INTERNAL",
   ];

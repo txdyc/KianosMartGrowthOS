@@ -331,8 +331,10 @@ export default function BatchDetailPage({ params }: PageProps<"/batches/[id]">) 
                   </div>
                   <div className="text-xs text-zinc-500">
                     {Object.entries(item.blockedDetails ?? {})
-                      .filter(([, value]) => typeof value === "string")
-                      .map(([key, value]) => `${key}: ${String(value)}`)
+                      .filter(([, value]) => typeof value === "string" || Array.isArray(value))
+                      .map(([key, value]) =>
+                        `${key}: ${Array.isArray(value) ? value.join(", ") : String(value)}`,
+                      )
                       .join(" · ")}
                   </div>
                 </div>

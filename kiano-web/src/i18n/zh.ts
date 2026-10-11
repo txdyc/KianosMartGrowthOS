@@ -619,6 +619,8 @@ export const zh: Record<MessageKey, string> = {
   "batch.blocked.STAGING_PRODUCT_MISSING":
     "本地 staging 中缺少该 SKU。请从 WooCommerce 导出该商品，并把 CSV 导入本地 staging（步骤见 README）。",
   "batch.blocked.PUBLISH_FAILED": "发布失败。",
+  "batch.blocked.PRODUCTION_FAILED": "生产发布失败，请勾选该 SKU 重新发布到生产。",
+  "batch.blocked.ASSET_REJECTED": "有必需的物料被驳回，请在商品页重新生成。",
   "batch.blocked.POLICY_INCOMPLETE": "店铺政策尚未填完整。",
   "batch.blocked.INTERNAL": "内部错误导致该项停止，请查看审计日志。",
   // 列表与创建页

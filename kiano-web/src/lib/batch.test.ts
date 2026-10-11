@@ -46,6 +46,19 @@ test("selectableForProduction only returns READY_FOR_PRODUCTION SKUs", () => {
       item(4, "BLOCKED"),
     ]),
   ).toEqual([1, 3]);
+
+  // a FAILED production publish is retried by the same OWNER action
+  const failed = { ...item(5, "BLOCKED"), blockedReason: "PRODUCTION_FAILED" };
+  const otherBlocked = { ...item(6, "BLOCKED"), blockedReason: "PUBLISH_FAILED" };
+  expect(selectableForProduction([failed, otherBlocked])).toEqual([5]);
+});
+
+test("blockedReasonKey falls back to the error text of a recorded business code", () => {
+  // the orchestrator stores the ApiException code of a failed action
+  expect(blockedReasonKey("COPY_POLICY_OUTDATED")).toBe("error.COPY_POLICY_OUTDATED");
+  // a code without any text shows the generic internal reason
+  expect(blockedReasonKey("SOMETHING_NEW")).toBe("batch.blocked.INTERNAL");
+  expect(blockedReasonKey("ASSET_REJECTED")).toBe("batch.blocked.ASSET_REJECTED");
 });
 
 test("formatDuration boundaries", () => {
@@ -88,6 +101,8 @@ test("stage and blocked-reason keys exist in the dictionary", () => {
     "FACT_DRAFT_FAILED",
     "STAGING_PRODUCT_MISSING",
     "PUBLISH_FAILED",
+    "PRODUCTION_FAILED",
+    "ASSET_REJECTED",
     "POLICY_INCOMPLETE",
     "INTERNAL",
   ];

@@ -624,6 +624,10 @@ export const en = {
   "batch.blocked.STAGING_PRODUCT_MISSING":
     "The SKU is missing in the local staging catalog. Export the product from WooCommerce and import the CSV into the local staging store (see README).",
   "batch.blocked.PUBLISH_FAILED": "The publish failed.",
+  "batch.blocked.PRODUCTION_FAILED":
+    "The production publish failed; select the SKU and publish to production again.",
+  "batch.blocked.ASSET_REJECTED":
+    "A required asset was rejected; regenerate it on the product page.",
   "batch.blocked.POLICY_INCOMPLETE": "The store policy is incomplete.",
   "batch.blocked.INTERNAL": "An internal error stopped this item; check the audit log.",
   // list + creation page

@@ -27,13 +27,21 @@ export function createActiveTimer(
   let lastActivityAt = now();
   let lastTickAt = lastActivityAt;
   let visible = true;
+  // active time worked before the page was hidden, not yet reported
+  let pendingMs = 0;
+
+  function activeSinceTick(current: number): number {
+    if (!visible) {
+      return 0;
+    }
+    const activeUntil = Math.min(current, lastActivityAt + idleMs);
+    return Math.max(0, activeUntil - lastTickAt);
+  }
 
   function deltaSeconds(): number {
     const current = now();
-    const activeUntil = visible
-      ? Math.min(current, lastActivityAt + idleMs)
-      : lastTickAt;
-    const active = Math.max(0, activeUntil - lastTickAt);
+    const active = pendingMs + activeSinceTick(current);
+    pendingMs = 0;
     lastTickAt = current;
     return active / 1000;
   }
@@ -45,9 +53,12 @@ export function createActiveTimer(
       lastActivityAt = now();
     },
     setVisible(next: boolean) {
-      lastTickAt = now();
+      const current = now();
+      // hiding pauses the clock but keeps what was worked until now
+      pendingMs += activeSinceTick(current);
+      lastTickAt = current;
       if (next) {
-        lastActivityAt = lastTickAt;
+        lastActivityAt = current;
       }
       visible = next;
     },

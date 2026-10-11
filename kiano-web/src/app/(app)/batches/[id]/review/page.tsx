@@ -97,8 +97,10 @@ export default function BatchReviewStationPage({ params }: PageProps<"/batches/[
     void loadStats();
   }, [loadQueue, loadStats]);
 
+  // Heartbeat every 15 s; hiding the page beats right away (after 60 s of
+  // silence the server counts a beat as 0).
   useEffect(() => {
-    const interval = window.setInterval(() => {
+    const beat = () => {
       const seconds = timerRef.current.tick();
       if (seconds <= 0) {
         return;
@@ -111,8 +113,18 @@ export default function BatchReviewStationPage({ params }: PageProps<"/batches/[
           body: { activeSeconds: seconds },
         }).catch(() => {});
       }
-    }, 15_000);
-    return () => window.clearInterval(interval);
+    };
+    const interval = window.setInterval(beat, 15_000);
+    const onHide = () => {
+      if (document.visibilityState === "hidden") {
+        beat();
+      }
+    };
+    document.addEventListener("visibilitychange", onHide);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onHide);
+    };
   }, []);
 
   useEffect(() => {

@@ -56,3 +56,17 @@ test("flush returns the last delta and resets the window", () => {
   now = 8_000;
   expect(timer.tick()).toBe(3);
 });
+test("hiding the page keeps the active time worked since the last tick", () => {
+  let now = 0;
+  const timer = createActiveTimer({ now: () => now });
+  timer.activity();
+
+  // 14 s of work, then the reviewer switches to the Woo admin tab
+  now = 14_000;
+  timer.setVisible(false);
+  now = 40_000; // hidden: does not count
+  timer.setVisible(true);
+  now = 45_000; // 5 s more after coming back
+
+  expect(timer.tick()).toBe(19);
+});
