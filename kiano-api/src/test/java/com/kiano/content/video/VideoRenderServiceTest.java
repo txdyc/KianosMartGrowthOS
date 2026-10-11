@@ -26,7 +26,7 @@ class VideoRenderServiceTest extends VideoTestSupport {
 
     @Test
     void render_h3Disabled_createsThreeComposeJobs_withEdlInputsOutputs() {
-        long runId = renderService.render(user, productId, null, 0, null);
+        long runId = renderService.render(user, productId, null, 0);
 
         List<GenerationJob> composeJobs = runJobs(runId).stream()
                 .filter(job -> job.step() == JobStep.VIDEO_COMPOSE)
@@ -88,7 +88,7 @@ class VideoRenderServiceTest extends VideoTestSupport {
         jdbcTemplate.update("delete from music_track");
         when(musicPicker.pick(anyLong(), any(), anyInt())).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> renderService.render(user, productId, null, 0, null))
+        assertThatThrownBy(() -> renderService.render(user, productId, null, 0))
                 .isInstanceOf(ApiException.class)
                 .satisfies(ex -> {
                     ApiException api = (ApiException) ex;
@@ -105,7 +105,7 @@ class VideoRenderServiceTest extends VideoTestSupport {
     void localWorkflowActive_createsLocalH3Jobs_composeAfterSuccess() {
         activateH3Workflow();
 
-        long runId = renderService.render(user, productId, Set.of(VideoType.DEMO), 0, null);
+        long runId = renderService.render(user, productId, Set.of(VideoType.DEMO), 0);
 
         GenerationJob h3 = jobOf(runId, JobStep.H3_CLIP_LOCAL, VideoType.DEMO);
         assertThat(runJobs(runId).stream().filter(job -> job.step() == JobStep.VIDEO_COMPOSE))

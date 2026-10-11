@@ -24,7 +24,7 @@ class VideoCompositionCoordinatorTest extends VideoTestSupport {
     void h3Failed_composeUsesFallbackWindow_recordsReason_ratioZero() {
         h3Properties.getApi().setEnabled(true); // no local workflow: the API is chosen
 
-        long runId = renderService.render(user, productId, Set.of(VideoType.DEMO), 0, null);
+        long runId = renderService.render(user, productId, Set.of(VideoType.DEMO), 0);
         GenerationJob api = jobOf(runId, JobStep.H3_CLIP_API, VideoType.DEMO);
 
         fail(api, "H3_FAILED: provider gave up");
@@ -56,7 +56,7 @@ class VideoCompositionCoordinatorTest extends VideoTestSupport {
         activateH3Workflow();
         h3Properties.getApi().setEnabled(true);
 
-        long runId = renderService.render(user, productId, Set.of(VideoType.DEMO), 0, null);
+        long runId = renderService.render(user, productId, Set.of(VideoType.DEMO), 0);
         GenerationJob local = jobOf(runId, JobStep.H3_CLIP_LOCAL, VideoType.DEMO);
 
         fail(local, "H3_LOCAL_FAILED: ComfyUI did not finish the clip");
@@ -97,7 +97,7 @@ class VideoCompositionCoordinatorTest extends VideoTestSupport {
     void duplicateTerminalSignals_createSingleComposeJob() {
         activateH3Workflow();
 
-        long runId = renderService.render(user, productId, Set.of(VideoType.DEMO), 0, null);
+        long runId = renderService.render(user, productId, Set.of(VideoType.DEMO), 0);
         GenerationJob local = jobOf(runId, JobStep.H3_CLIP_LOCAL, VideoType.DEMO);
         String clipKey = local.input().path("outputs").path("clip").asString();
         storage.put(clipKey, videoBytes(), "video/mp4");
@@ -114,7 +114,7 @@ class VideoCompositionCoordinatorTest extends VideoTestSupport {
 
     @Test
     void composeSucceeded_createsVideoAsset_withRenditionsFileNameAndPrice() throws Exception {
-        long runId = renderService.render(user, productId, Set.of(VideoType.DEMO), 0, null);
+        long runId = renderService.render(user, productId, Set.of(VideoType.DEMO), 0);
         GenerationJob compose = jobOf(runId, JobStep.VIDEO_COMPOSE, VideoType.DEMO);
 
         finishCompose(compose, 27.0);
@@ -152,10 +152,10 @@ class VideoCompositionCoordinatorTest extends VideoTestSupport {
 
     @Test
     void newVersion_archivesPreviousInReview() {
-        long firstRun = renderService.render(user, productId, Set.of(VideoType.DEMO), 0, null);
+        long firstRun = renderService.render(user, productId, Set.of(VideoType.DEMO), 0);
         finishCompose(jobOf(firstRun, JobStep.VIDEO_COMPOSE, VideoType.DEMO), 27.0);
 
-        long secondRun = renderService.render(user, productId, Set.of(VideoType.DEMO), 1, null);
+        long secondRun = renderService.render(user, productId, Set.of(VideoType.DEMO), 1);
         finishCompose(jobOf(secondRun, JobStep.VIDEO_COMPOSE, VideoType.DEMO), 27.0);
 
         List<AssetEntity> assets = videoAssets(VideoType.DEMO);
@@ -168,7 +168,7 @@ class VideoCompositionCoordinatorTest extends VideoTestSupport {
 
     @Test
     void aiRatioOver30AtCompletion_assetRejectedNotInReview() throws Exception {
-        long runId = renderService.render(user, productId, Set.of(VideoType.DEMO), 0, null);
+        long runId = renderService.render(user, productId, Set.of(VideoType.DEMO), 0);
         GenerationJob compose = jobOf(runId, JobStep.VIDEO_COMPOSE, VideoType.DEMO);
 
         // a hand-built EDL that slipped past planning: an 8 s AI hook in a 25 s cut is 32 %

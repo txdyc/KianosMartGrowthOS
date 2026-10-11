@@ -21,6 +21,7 @@ import com.kiano.content.video.h3.H3Backend;
 import com.kiano.content.video.h3.H3BackendSelector;
 import com.kiano.content.video.h3.H3PromptBuilder;
 import com.kiano.platform.auth.CurrentUser;
+import com.kiano.platform.queue.TaskQueue;
 import com.kiano.platform.storage.ObjectStorage;
 import com.kiano.platform.web.ApiException;
 import com.kiano.workerprotocol.ContentTypes;
@@ -74,6 +75,7 @@ public class VideoRenderService {
     private final VideoProperties videoProperties;
     private final VideoJobFactory jobFactory;
     private final GenerationRunStore runs;
+    private final TaskQueue taskQueue;
     private final ObjectMapper objectMapper;
 
     public VideoRenderService(ProductCatalog productCatalog, ProductProfileService profileService,
@@ -82,7 +84,8 @@ public class VideoRenderService {
             VideoOverlayRenderer overlayRenderer, ClipWindowPicker windowPicker,
             MusicPicker musicPicker, AdBaseSelector baseSelector, H3BackendSelector h3Selector,
             H3PromptBuilder h3PromptBuilder, VideoProperties videoProperties,
-            VideoJobFactory jobFactory, GenerationRunStore runs, ObjectMapper objectMapper) {
+            VideoJobFactory jobFactory, GenerationRunStore runs, TaskQueue taskQueue,
+            ObjectMapper objectMapper) {
         this.productCatalog = productCatalog;
         this.profileService = profileService;
         this.factSheetService = factSheetService;
@@ -100,33 +103,90 @@ public class VideoRenderService {
         this.videoProperties = videoProperties;
         this.jobFactory = jobFactory;
         this.runs = runs;
+        this.taskQueue = taskQueue;
         this.objectMapper = objectMapper;
     }
 
     /**
-     * Renders the requested types (all when empty) into one VIDEO run and returns
-     * its id. {@code overrideEdl} (the review editor's trim, Task 10) skips the
-     * preconditions, picking and planning, and re-composes that cut with the
-     * previous version's overlays and music.
+     * Plans and queues the requested types (all when empty) into one VIDEO run and
+     * returns its id. This is the heavy path - it downloads and ranks the footage
+     * and renders the overlays - so requests only check the preconditions and
+     * queue a {@link VideoRenderTaskHandler} task that calls it.
      */
     public long render(CurrentUser user, long productId, @Nullable Set<VideoType> typesOrAll,
-            int candidate, @Nullable Edl overrideEdl) {
-        long tenantId = user.tenantId();
+            int candidate) {
+        return render(user.tenantId(), user.userId(), productId, typesOrAll, candidate);
+    }
+
+    /**
+     * What requests call (render button, review REGENERATE): checks the
+     * preconditions synchronously (409 VIDEO_PRECONDITIONS) and queues a
+     * VIDEO_RENDER task for the heavy planning. 409 VIDEO_RENDER_IN_PROGRESS
+     * when the same render is already queued or running.
+     */
+    public long queueRender(CurrentUser user, long productId, @Nullable Set<VideoType> typesOrAll,
+            int candidate) {
         Set<VideoType> types = typesOrAll == null || typesOrAll.isEmpty()
                 ? EnumSet.allOf(VideoType.class)
                 : EnumSet.copyOf(typesOrAll);
-        if (overrideEdl != null) {
-            types = EnumSet.of(VideoType.fromWire(overrideEdl.videoType()));
-        } else {
-            checkPreconditions(tenantId, productId, types);
-        }
+        checkPreconditions(user.tenantId(), productId, types);
+        List<String> wire = types.stream().map(VideoType::wire).toList();
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("productId", productId);
+        payload.put("types", wire);
+        payload.put("candidate", candidate);
+        payload.put("userId", user.userId());
+        return taskQueue.enqueue(user.tenantId(), VideoRenderTaskHandler.TYPE, payload,
+                        "video-render:" + productId + ":" + String.join(",", wire) + ":" + candidate)
+                .orElseThrow(() -> new ApiException(HttpStatus.CONFLICT, "VIDEO_RENDER_IN_PROGRESS",
+                        "This video render is already queued or running"));
+    }
+
+    /** The task handler's entry point: {@code userId} is who queued the render. */
+    public long render(long tenantId, @Nullable Long userId, long productId,
+            @Nullable Set<VideoType> typesOrAll, int candidate) {
+        Set<VideoType> types = typesOrAll == null || typesOrAll.isEmpty()
+                ? EnumSet.allOf(VideoType.class)
+                : EnumSet.copyOf(typesOrAll);
+        checkPreconditions(tenantId, productId, types);
         ProductView product = productCatalog.findById(tenantId, productId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "PRODUCT_NOT_FOUND",
                         "Product " + productId + " does not exist"));
-        long runId = runs.create(tenantId, productId, user.userId(), "VIDEO");
+        long runId = runs.create(tenantId, productId, userId, "VIDEO");
         for (VideoType type : types) {
-            renderType(tenantId, product, runId, type, candidate, overrideEdl);
+            renderType(tenantId, product, runId, type, candidate);
         }
+        return runId;
+    }
+
+    /**
+     * Re-composes a trimmed cut of exactly the edited version (review editor,
+     * Task 10): its compose inputs - footage, the generated H3 clip, captions,
+     * end card and music - and its provenance (script, music track, templates,
+     * price, H3 attempts) are reused as recorded, so nothing is downloaded,
+     * re-ranked or re-picked; only the EDL changes.
+     */
+    public long recut(CurrentUser user, AssetEntity edited, Edl trimmed) {
+        long tenantId = user.tenantId();
+        long productId = edited.getProductId();
+        VideoType type = VideoType.fromWire(trimmed.videoType());
+        JsonNode recorded = objectMapper.readTree(edited.getProvenanceJson());
+        Map<String, String> inputs = new LinkedHashMap<>();
+        for (Map.Entry<String, JsonNode> entry : recorded.path("inputs").properties()) {
+            inputs.put(entry.getKey(), entry.getValue().asString());
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> provenance = new LinkedHashMap<>(
+                objectMapper.treeToValue(recorded, Map.class));
+        provenance.remove("edl"); // the asset stores the trimmed EDL it was cut from
+        provenance.put("recutFrom", edited.getId());
+        long runId = runs.create(tenantId, productId, user.userId(), "VIDEO");
+        Map<String, String> outputs = Map.of(
+                "video", outputKey(tenantId, runId, type, "video.mp4"),
+                "video_nomusic", outputKey(tenantId, runId, type, "video_nomusic.mp4"),
+                "poster", outputKey(tenantId, runId, type, "poster.jpg"));
+        jobFactory.createCompose(tenantId, productId, runId, type.wire(),
+                "video:" + runId + ":" + type.wire(), trimmed, inputs, outputs, provenance, null);
         return runId;
     }
 
@@ -176,7 +236,7 @@ public class VideoRenderService {
     }
 
     private void renderType(long tenantId, ProductView product, long runId, VideoType type,
-            int candidate, @Nullable Edl overrideEdl) {
+            int candidate) {
         long productId = product.id();
         AssetEntity scriptAsset = approvedScript(tenantId, productId, type)
                 .orElseThrow(() -> new ApiException(HttpStatus.CONFLICT, "VIDEO_PRECONDITIONS",
@@ -195,28 +255,22 @@ public class VideoRenderService {
             }
             VideoPlanner.Windows windows = pickWindows(type, files, sources, candidate);
 
-            // object keys of the compose inputs; a re-cut reuses the previous overlays
+            // object keys of the compose inputs
             Map<String, String> inputs = new LinkedHashMap<>();
             for (Map.Entry<String, SourceMediaEntity> entry : media.entrySet()) {
                 inputs.put(entry.getKey(), entry.getValue().getObjectKey());
             }
             Map<String, Object> seeds = new LinkedHashMap<>();
-            AssetEntity previous = overrideEdl == null
-                    ? null : latestVideoAsset(tenantId, productId, type);
-            if (previous != null) {
-                reusePrevious(previous, inputs, seeds);
-            } else {
-                VideoOverlayRenderer.RenderedOverlays rendered = overlayRenderer.render(tenantId, product,
-                        script, captionCount);
-                String prefix = "t" + tenantId + "/video-inputs/" + runId + "/" + type.wire() + "/";
-                for (Map.Entry<String, byte[]> entry : rendered.pngs().entrySet()) {
-                    String key = prefix + entry.getKey() + ".png";
-                    storage.put(key, entry.getValue(), "image/png");
-                    inputs.put(entry.getKey(), key);
-                }
-                seeds.put("templates", rendered.templateVersions());
-                seeds.put("price", rendered.price());
+            VideoOverlayRenderer.RenderedOverlays rendered = overlayRenderer.render(tenantId, product,
+                    script, captionCount);
+            String prefix = "t" + tenantId + "/video-inputs/" + runId + "/" + type.wire() + "/";
+            for (Map.Entry<String, byte[]> entry : rendered.pngs().entrySet()) {
+                String key = prefix + entry.getKey() + ".png";
+                storage.put(key, entry.getValue(), "image/png");
+                inputs.put(entry.getKey(), key);
             }
+            seeds.put("templates", rendered.templateVersions());
+            seeds.put("price", rendered.price());
             MusicTrack music = musicPicker
                     .pick(tenantId, type, rotation(tenantId, productId, type))
                     .orElseThrow(() -> new ApiException(HttpStatus.CONFLICT, "MUSIC_LIBRARY_EMPTY",
@@ -225,7 +279,7 @@ public class VideoRenderService {
             inputs.put("music", music.objectKey());
             seeds.put("musicTrackId", music.id());
 
-            H3Hook hook = overrideEdl == null ? h3Hook(tenantId, product, runId, type) : H3Hook.none();
+            H3Hook hook = h3Hook(tenantId, product, runId, type);
             VideoPlanner.PlanInput planInput = new VideoPlanner.PlanInput(type, sources,
                     hook.backend() != null, windows, captionCount, "music");
             Map<String, String> outputs = Map.of(
@@ -246,11 +300,6 @@ public class VideoRenderService {
                     hook.firstFrameKey(), hook.sceneLabel(), planInput, inputs, outputs,
                     outputKey(tenantId, runId, type, "h3_clip.mp4"), provenance, List.of());
 
-            if (overrideEdl != null) {
-                jobFactory.createCompose(tenantId, productId, runId, context, overrideEdl, inputs,
-                        composedProvenance(context, null));
-                return;
-            }
             Edl edl = VideoPlanner.plan(planInput, videoProperties);
             if (hook.backend() == null) {
                 jobFactory.createCompose(tenantId, productId, runId, context, edl, inputs,
@@ -395,33 +444,6 @@ public class VideoRenderService {
                 .eq(AssetEntity::getProductId, productId)
                 .eq(AssetEntity::getSpecCode, "VIDEO_AD")
                 .eq(AssetEntity::getVariant, type.wire())));
-    }
-
-    private @Nullable AssetEntity latestVideoAsset(long tenantId, long productId, VideoType type) {
-        return assetMapper.selectOne(Wrappers.<AssetEntity>lambdaQuery()
-                .eq(AssetEntity::getTenantId, tenantId)
-                .eq(AssetEntity::getProductId, productId)
-                .eq(AssetEntity::getSpecCode, "VIDEO_AD")
-                .eq(AssetEntity::getVariant, type.wire())
-                .orderByDesc(AssetEntity::getVersion)
-                .last("limit 1"));
-    }
-
-    /** Overlay/music object keys, template versions and price from the previous cut. */
-    private void reusePrevious(AssetEntity previous, Map<String, String> inputs,
-            Map<String, Object> seeds) {
-        JsonNode provenance = objectMapper.readTree(previous.getProvenanceJson());
-        for (Map.Entry<String, JsonNode> entry : provenance.path("inputs").properties()) {
-            String key = entry.getKey();
-            if (key.startsWith("cap_") || "endcard".equals(key) || "music".equals(key)) {
-                inputs.put(key, entry.getValue().asString());
-            }
-        }
-        if (provenance.path("musicTrackId").isNumber()) {
-            seeds.put("musicTrackId", provenance.path("musicTrackId").asLong());
-        }
-        seeds.put("templates", objectMapper.treeToValue(provenance.path("templates"), Map.class));
-        seeds.put("price", objectMapper.treeToValue(provenance.path("price"), Map.class));
     }
 
     private Map<String, Path> download(Map<String, SourceMediaEntity> media) {

@@ -106,9 +106,7 @@ public class VideoEdlController {
                             .map(v -> Map.of("code", v.code(), "details", v.details())).toList()));
         }
 
-        VideoType type = VideoType.fromWire(original.videoType());
-        long runId = renderService.render(user, asset.getProductId(), java.util.Set.of(type),
-                provenance.path("candidate").asInt(0), trimmed);
+        long runId = renderService.recut(user, asset, trimmed);
         auditLog.record(new AuditEntry(user.tenantId(), ActorType.USER,
                 String.valueOf(user.userId()), "VIDEO_EDL_EDITED", "asset",
                 String.valueOf(assetId), before(original), before(trimmed), null, "VIDEO"));
@@ -184,7 +182,12 @@ public class VideoEdlController {
         return null;
     }
 
-    /** Source lengths per input key for the segment-bounds check. */
+    /**
+     * Source lengths per input key for the segment-bounds check: the footage the
+     * cut was made from (the segment's sourceMediaId), not whatever is the newest
+     * ACCEPTED take of that shot now. A REAL segment whose length is unknown is
+     * left out, which EdlValidator reports as SEGMENT_OUT_OF_SOURCE.
+     */
     private Map<String, Double> inputDurations(Edl edl, AssetEntity asset) {
         Map<String, Double> durations = new LinkedHashMap<>();
         for (Edl.Segment segment : edl.segments()) {
@@ -194,8 +197,11 @@ public class VideoEdlController {
             } else if (segment.kind() == Edl.Kind.STILL) {
                 durations.put(segment.input(), segment.out());
             } else {
-                SourceMediaEntity media = sourceMediaMapper.selectOne(
-                        Wrappers.<SourceMediaEntity>lambdaQuery()
+                SourceMediaEntity media = segment.sourceMediaId() != null
+                        ? sourceMediaMapper.selectOne(Wrappers.<SourceMediaEntity>lambdaQuery()
+                                .eq(SourceMediaEntity::getTenantId, asset.getTenantId())
+                                .eq(SourceMediaEntity::getId, segment.sourceMediaId()))
+                        : sourceMediaMapper.selectOne(Wrappers.<SourceMediaEntity>lambdaQuery()
                                 .eq(SourceMediaEntity::getTenantId, asset.getTenantId())
                                 .eq(SourceMediaEntity::getProductId, asset.getProductId())
                                 .eq(SourceMediaEntity::getShotCode,

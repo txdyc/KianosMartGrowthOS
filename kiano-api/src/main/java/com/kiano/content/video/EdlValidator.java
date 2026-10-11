@@ -42,14 +42,19 @@ public final class EdlValidator {
         for (Edl.Segment segment : edl.segments()) {
             Double sourceSeconds = inputDurations == null ? null
                     : inputDurations.get(segment.input());
-            if (segment.in() < 0 || segment.in() >= segment.out()
+            // footage whose length is unknown cannot be proven in bounds: reject it
+            boolean unknownSource = inputDurations != null && segment.kind() == Edl.Kind.REAL
+                    && sourceSeconds == null;
+            if (unknownSource || segment.in() < 0 || segment.in() >= segment.out()
                     || (sourceSeconds != null && segment.out() > sourceSeconds)) {
                 Map<String, Object> details = new LinkedHashMap<>();
                 details.put("input", segment.input());
                 details.put("role", segment.role());
                 details.put("in", segment.in());
                 details.put("out", segment.out());
-                if (sourceSeconds != null) {
+                if (unknownSource) {
+                    details.put("sourceSeconds", "unknown");
+                } else if (sourceSeconds != null) {
                     details.put("sourceSeconds", sourceSeconds);
                 }
                 violations.add(violation("SEGMENT_OUT_OF_SOURCE", details));

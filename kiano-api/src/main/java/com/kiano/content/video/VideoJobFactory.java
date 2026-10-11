@@ -125,7 +125,10 @@ public class VideoJobFactory {
                 .findFirst();
     }
 
-    /** Only the object keys the EDL references are handed to the worker. */
+    /**
+     * Only the object keys the EDL references are handed to the worker; every
+     * referenced input must have one (a trimmed H3 cut without its clip fails here).
+     */
     private static Map<String, String> referencedInputs(Edl edl, Map<String, String> inputs) {
         Set<String> keys = new LinkedHashSet<>();
         edl.segments().forEach(segment -> keys.add(segment.input()));
@@ -136,9 +139,12 @@ public class VideoJobFactory {
         Map<String, String> referenced = new LinkedHashMap<>();
         for (String key : keys) {
             String objectKey = inputs.get(key);
-            if (objectKey != null) {
-                referenced.put(key, objectKey);
+            if (objectKey == null || objectKey.isBlank()) {
+                // fail here, not on the worker minutes later with INPUT_MISSING
+                throw new IllegalStateException("The EDL uses input '" + key
+                        + "' but no object key was provided for it");
             }
+            referenced.put(key, objectKey);
         }
         return referenced;
     }

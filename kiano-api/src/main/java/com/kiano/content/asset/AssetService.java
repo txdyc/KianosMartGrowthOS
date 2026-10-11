@@ -2,7 +2,10 @@ package com.kiano.content.asset;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.kiano.commerce.ProductCatalog;
+import com.kiano.commerce.ProductView;
 import com.kiano.content.ads.AdRenderMeta;
+import com.kiano.content.ads.PriceDisplay;
 import com.kiano.content.copy.CopyAssembler;
 import com.kiano.content.generation.GenerationJob;
 import com.kiano.content.generation.GenerationJobStore;
@@ -24,6 +27,7 @@ import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -49,10 +53,13 @@ public class AssetService {
     private final AuditLog auditLog;
     private final ObjectMapper objectMapper;
     private final VideoProperties videoProperties;
+    private final ProductCatalog productCatalog;
+    private final AssetReviewMapper reviewMapper;
 
     public AssetService(AssetMapper mapper, ObjectStorage storage, Precheck precheck,
             GenerationJobStore jobs, AuditLog auditLog, ObjectMapper objectMapper,
-            VideoProperties videoProperties) {
+            VideoProperties videoProperties, ProductCatalog productCatalog,
+            AssetReviewMapper reviewMapper) {
         this.mapper = mapper;
         this.storage = storage;
         this.precheck = precheck;
@@ -60,6 +67,8 @@ public class AssetService {
         this.auditLog = auditLog;
         this.objectMapper = objectMapper;
         this.videoProperties = videoProperties;
+        this.productCatalog = productCatalog;
+        this.reviewMapper = reviewMapper;
     }
 
     @Transactional
@@ -135,11 +144,14 @@ public class AssetService {
      * takes the duration the worker measured, and records the AI ratio. A video
      * whose AI share exceeds {@code max-ai-ratio} is REJECTED with the
      * AI_RATIO_EXCEEDED flag and the VIDEO_BLOCKED_AI_RATIO audit instead of
-     * entering review. Asset reviews need a human reviewer, so the block is
-     * recorded through the flag and the audit row (C5 Global Constraints).
+     * entering review, with a system asset_review row (no reviewer, reason
+     * AI_RATIO_EXCEEDED). A price-only re-render whose price is no longer the
+     * product's current one (a later price change overtook it) is discarded:
+     * no version is created and VIDEO_PRICE_RERENDER_SUPERSEDED is audited.
+     * The renditions are copied inside the object store, never through the heap.
      */
     @Transactional
-    public AssetView createVideoFromJob(GenerationJob job, String sku,
+    public @Nullable AssetView createVideoFromJob(GenerationJob job, String sku,
             Map<String, Object> provenance) {
         Edl edl = objectMapper.treeToValue(job.input().path("edl"), Edl.class);
         JsonNode outputs = job.output().path("outputs");
@@ -148,8 +160,17 @@ public class AssetService {
         String posterKey = outputs.path("poster").path("objectKey").asString();
         Double durationS = outputs.path("video").path("durationS").isNumber()
                 ? outputs.path("video").path("durationS").asDouble() : null;
-
+        Long baselineId = job.input().path("autoApproveFrom").isNumber()
+                ? job.input().path("autoApproveFrom").asLong() : null;
         String variant = job.variant();
+        if (baselineId != null && priceOvertaken(job, provenance)) {
+            auditLog.record(new AuditEntry(job.tenantId(), ActorType.SYSTEM, "SYSTEM",
+                    "VIDEO_PRICE_RERENDER_SUPERSEDED", "generation_job", String.valueOf(job.id()),
+                    null, Map.of("variant", variant, "renderedPrice",
+                            String.valueOf(provenance.get("price"))), null, "VIDEO"));
+            return null;
+        }
+
         int version = nextVersion(job.tenantId(), job.productId(), "VIDEO_AD", variant);
         String prefix = "t" + job.tenantId() + "/assets/" + job.productId() + "/VIDEO_AD/"
                 + variant + "/v" + version;
@@ -157,8 +178,8 @@ public class AssetService {
         String noMusicAssetKey = prefix + "_nomusic.mp4";
         String posterAssetKey = prefix + "_poster.jpg";
         String thumbKey = prefix + "_thumb.jpg";
-        storage.put(fullKey, storage.download(videoKey), "video/mp4");
-        storage.put(noMusicAssetKey, storage.download(noMusicKey), "video/mp4");
+        storage.copy(videoKey, fullKey, "video/mp4");
+        storage.copy(noMusicKey, noMusicAssetKey, "video/mp4");
         byte[] poster = storage.download(posterKey);
         storage.put(posterAssetKey, poster, "image/jpeg");
         storage.put(thumbKey, ImageCodec.thumbnailJpeg(ImageCodec.read(poster),
@@ -176,8 +197,9 @@ public class AssetService {
         // template versions as the STALE version it replaces (C5 Task 11)
         Map<String, Object> stored = new LinkedHashMap<>(provenance == null ? Map.of() : provenance);
         stored.put("edl", edl);
-        Long baselineId = job.input().path("autoApproveFrom").isNumber()
-                ? job.input().path("autoApproveFrom").asLong() : null;
+        // the inputs the worker actually composed (incl. a generated h3_hook): a
+        // recut and the price re-render reuse exactly these object keys
+        stored.put("inputs", objectMapper.treeToValue(job.input().path("inputs"), Map.class));
         boolean autoApproved = !blocked && baselineId != null
                 && matchesBaseline(baselineId, stored);
 
@@ -231,6 +253,13 @@ public class AssetService {
         auditLog.record(new AuditEntry(job.tenantId(), ActorType.SYSTEM, "pipeline",
                 "ASSET_CREATED", "asset", String.valueOf(entity.getId()), null, after, null, "VIDEO"));
         if (blocked) {
+            AssetReviewEntity review = new AssetReviewEntity();
+            review.setTenantId(job.tenantId());
+            review.setAssetId(entity.getId());
+            review.setReviewer(null); // a system decision (V25 made reviewer nullable)
+            review.setDecision("REJECT");
+            review.setReasonCodes(objectMapper.writeValueAsString(List.of("AI_RATIO_EXCEEDED")));
+            reviewMapper.insert(review);
             auditLog.record(new AuditEntry(job.tenantId(), ActorType.SYSTEM, "SYSTEM",
                     "VIDEO_BLOCKED_AI_RATIO", "asset", String.valueOf(entity.getId()), null,
                     Map.of("aiRatio", aiRatio, "maxAiRatio", videoProperties.getMaxAiRatio()),
@@ -304,6 +333,28 @@ public class AssetService {
                 .orderByDesc(AssetEntity::getVersion)
                 .last("limit 1"));
         return approved != null && approved.getId().longValue() == scriptId.longValue();
+    }
+
+    /**
+     * True when a price re-render shows a price that is no longer what the
+     * product shows now: a later price change already queued its own re-render,
+     * so this cut must never become a version (C5 review fix).
+     */
+    private boolean priceOvertaken(GenerationJob job, Map<String, Object> provenance) {
+        ProductView product = productCatalog.findById(job.tenantId(), job.productId()).orElse(null);
+        if (product == null || provenance == null) {
+            return false;
+        }
+        JsonNode rendered = objectMapper.valueToTree(provenance.get("price"));
+        PriceDisplay now = PriceDisplay.of(product, Instant.now());
+        return !(Objects.equals(textOrNull(rendered, "current"), now.current())
+                && Objects.equals(textOrNull(rendered, "strike"), now.strike())
+                && Objects.equals(textOrNull(rendered, "endsLabel"), now.endsLabel()));
+    }
+
+    private static @Nullable String textOrNull(@Nullable JsonNode node, String field) {
+        JsonNode value = node == null ? null : node.path(field);
+        return value != null && value.isTextual() ? value.asString() : null;
     }
 
     private static @Nullable BigDecimal priceSnapshot(Map<String, Object> provenance) {

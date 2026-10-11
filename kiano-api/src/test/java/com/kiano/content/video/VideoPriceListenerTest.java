@@ -63,6 +63,60 @@ class VideoPriceListenerTest extends VideoTestSupport {
     }
 
     @Test
+    void twoQuickPriceChanges_inOrder_onlyTheCurrentPriceStaysApproved() {
+        approvedVideo(VideoType.DEMO);
+        changePrice(199);
+        publishPriceChange();
+        GenerationJob first = latestCompose(VideoType.DEMO);
+        changePrice(179); // before the first re-render has finished
+        publishPriceChange();
+        GenerationJob second = latestCompose(VideoType.DEMO);
+
+        finishCompose(first, 27.0);  // already outdated when it lands: discarded
+        finishCompose(second, 27.0);
+
+        List<AssetEntity> versions = videoAssets(VideoType.DEMO);
+        AssetEntity newest = versions.get(0);
+        assertThat(newest.getPriceSnapshot()).isEqualByComparingTo("179.00");
+        assertThat(newest.getStatus()).isEqualTo(AssetStatus.APPROVED.name());
+        assertThat(versions.stream().filter(v -> "APPROVED".equals(v.getStatus())))
+                .singleElement()
+                .satisfies(v -> assertThat(v.getPriceSnapshot()).isEqualByComparingTo("179.00"));
+        // the 199 cut never became a version that export or the replacement list could pick
+        assertThat(versions).noneSatisfy(v -> assertThat(v.getPriceSnapshot())
+                .isEqualByComparingTo("199.00"));
+        assertThat(audit("VIDEO_PRICE_RERENDER_SUPERSEDED")).isEqualTo(1);
+    }
+
+    @Test
+    void twoQuickPriceChanges_finishingOutOfOrder_neverApproveTheOutdatedPrice() {
+        approvedVideo(VideoType.DEMO);
+        changePrice(199);
+        publishPriceChange();
+        GenerationJob first = latestCompose(VideoType.DEMO);
+        changePrice(179);
+        publishPriceChange();
+        GenerationJob second = latestCompose(VideoType.DEMO);
+
+        // the newer price lands first: hold the first job back so the test worker
+        // leases the second one (leasing is oldest-first)
+        jdbcTemplate.update("update generation_job set run_after = now() + interval '1 hour' "
+                + "where id = ?", first.id());
+        finishCompose(second, 27.0);
+        jdbcTemplate.update("update generation_job set run_after = now() where id = ?", first.id());
+        finishCompose(first, 27.0);  // the 199 cut arrives late
+
+        List<AssetEntity> versions = videoAssets(VideoType.DEMO);
+        assertThat(versions.get(0).getPriceSnapshot()).isEqualByComparingTo("179.00");
+        assertThat(versions.stream().filter(v -> "APPROVED".equals(v.getStatus())))
+                .singleElement()
+                .satisfies(v -> assertThat(v.getPriceSnapshot()).isEqualByComparingTo("179.00"));
+        assertThat(versions).noneSatisfy(v -> assertThat(v.getPriceSnapshot())
+                .isEqualByComparingTo("199.00"));
+        assertThat(audit("VIDEO_PRICE_RERENDER_SUPERSEDED")).isEqualTo(1);
+    }
+
+    @Test
     void priceChange_onlyEndCardRerendered_otherInputsReused() {
         AssetEntity v1 = approvedVideo(VideoType.DEMO);
         JsonNode before = objectMapper.readTree(v1.getProvenanceJson());
@@ -153,7 +207,7 @@ class VideoPriceListenerTest extends VideoTestSupport {
 
     /** Renders one type, approves it and returns the approved version. */
     private AssetEntity approvedVideo(VideoType type) {
-        long runId = renderService.render(user, productId, Set.of(type), 0, null);
+        long runId = renderService.render(user, productId, Set.of(type), 0);
         finishCompose(jobOf(runId, JobStep.VIDEO_COMPOSE, type), 27.0);
         AssetEntity asset = videoAssets(type).get(0);
         reviewService.decide(user, asset.getId(), ReviewService.Decision.APPROVE, List.of(),

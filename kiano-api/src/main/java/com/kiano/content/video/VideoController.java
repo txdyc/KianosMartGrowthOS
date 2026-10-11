@@ -16,6 +16,7 @@ import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -24,8 +25,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Video endpoints (C5): POST .../products/{id}/videos/script queues the
- * three-type LLM script generation (202). Later tasks add the EDL editor,
- * composition trigger and video review endpoints here.
+ * three-type LLM script generation (202); POST .../videos/render checks the
+ * preconditions and queues the background VIDEO_RENDER task (202), whose
+ * outcome GET .../videos/render-status reports. The EDL editor and video
+ * review live in VideoEdlController and ReviewController.
  */
 @RestController
 @RequestMapping("/api/v1/content")
@@ -72,8 +75,30 @@ public class VideoController {
         if (candidateValue instanceof Number number) {
             candidate = number.intValue();
         }
-        long runId = renderService.render(user, productId, types, candidate, null);
-        return ResponseEntity.status(HttpStatus.ACCEPTED).body(Map.of("runId", runId));
+        long taskId = renderService.queueRender(user, productId, types, candidate);
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(Map.of("taskId", taskId));
+    }
+
+    /** Outcome of the product's latest VIDEO_RENDER task (planning runs in the background). */
+    public record RenderStatus(String status, @Nullable Long runId, @Nullable String lastError,
+            java.time.@Nullable Instant finishedAt) {
+    }
+
+    /**
+     * The latest background video render of the product, so a render that failed
+     * after the request returned (footage too short, a precondition that changed
+     * meanwhile) is visible in the videos panel; 204 when none ran yet.
+     */
+    @GetMapping("/products/{id}/videos/render-status")
+    @PreAuthorize("hasRole('VIEWER')")
+    public ResponseEntity<RenderStatus> renderStatus(CurrentUser user,
+            @PathVariable("id") long productId) {
+        return queue.latestFor(user.tenantId(), VideoRenderTaskHandler.TYPE, "productId", productId)
+                .map(task -> ResponseEntity.ok(new RenderStatus(task.status().name(),
+                        task.result() != null && task.result().path("runId").isNumber()
+                                ? task.result().path("runId").asLong() : null,
+                        task.lastError(), task.finishedAt())))
+                .orElseGet(() -> ResponseEntity.noContent().build());
     }
 
     @PostMapping("/products/{id}/videos/script")

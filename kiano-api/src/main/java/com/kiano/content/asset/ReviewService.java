@@ -401,8 +401,9 @@ public class ReviewService {
             return null;
         }
         if ("VIDEO_AD".equals(asset.getSpecCode())) {
-            // re-plan that one type with the next window candidate; the music
-            // rotates because the version count just went up
+            // queue a re-plan of that one type with the next window candidate (the
+            // music rotates because the version count goes up); the heavy planning
+            // runs in the VIDEO_RENDER task, not inside this review transaction
             JsonNode provenance = objectMapper.readTree(asset.getProvenanceJson());
             int candidate = provenance.path("candidate").asInt(0) + 1;
             VideoType type;
@@ -412,8 +413,8 @@ public class ReviewService {
                 throw new ApiException(HttpStatus.CONFLICT, "REGENERATE_NOT_POSSIBLE",
                         "Unknown video type variant " + asset.getVariant());
             }
-            return videoRenderService.render(user, asset.getProductId(), Set.of(type), candidate,
-                    null);
+            videoRenderService.queueRender(user, asset.getProductId(), Set.of(type), candidate);
+            return null;
         }
         String pipelineRef = jdbcTemplate.queryForObject(
                 "select pipeline_ref from asset_spec where code = ?", String.class,
