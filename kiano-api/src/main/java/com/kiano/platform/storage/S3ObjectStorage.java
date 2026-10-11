@@ -9,10 +9,12 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
 import software.amazon.awssdk.services.s3.model.CreateBucketRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadBucketRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.MetadataDirective;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
@@ -115,5 +117,17 @@ public class S3ObjectStorage implements ObjectStorage, ApplicationRunner {
                 .bucket(properties.getBucket())
                 .key(key)
                 .build()).asByteArray();
+    }
+
+    @Override
+    public void copy(String sourceKey, String targetKey, String contentType) {
+        s3.copyObject(CopyObjectRequest.builder()
+                .sourceBucket(properties.getBucket())
+                .sourceKey(sourceKey)
+                .destinationBucket(properties.getBucket())
+                .destinationKey(targetKey)
+                .metadataDirective(MetadataDirective.REPLACE)
+                .contentType(contentType)
+                .build());
     }
 }

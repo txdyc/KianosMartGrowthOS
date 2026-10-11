@@ -24,6 +24,12 @@ public interface ObjectStorage {
     /** Returns a presigned PUT URL for the given content type (public-endpoint host). */
     URI presignPut(String key, Duration ttl, String contentType);
 
+    /**
+     * Copies an object to another key inside the store (no bytes pass through
+     * the api), setting the target's content type.
+     */
+    void copy(String sourceKey, String targetKey, String contentType);
+
     /** Downloads the object's bytes. */
     byte[] download(String key);
 }

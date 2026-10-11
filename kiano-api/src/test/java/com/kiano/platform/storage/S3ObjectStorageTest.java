@@ -84,4 +84,21 @@ class S3ObjectStorageTest {
         storage.put("test/download.bin", bytes, "application/octet-stream");
         assertThat(storage.download("test/download.bin")).isEqualTo(bytes);
     }
+
+    @Test
+    void copy_duplicatesTheObjectServerSide_withTheGivenContentType() throws Exception {
+        byte[] bytes = "copy-me".getBytes(StandardCharsets.UTF_8);
+        storage.put("test/copy-source.mp4", bytes, "application/octet-stream");
+
+        storage.copy("test/copy-source.mp4", "test/copy-target.mp4", "video/mp4");
+
+        assertThat(storage.download("test/copy-target.mp4")).isEqualTo(bytes);
+        assertThat(storage.exists("test/copy-source.mp4")).isTrue();
+        java.net.http.HttpResponse<Void> head = java.net.http.HttpClient.newHttpClient().send(
+                java.net.http.HttpRequest.newBuilder(
+                        storage.presignGet("test/copy-target.mp4", java.time.Duration.ofMinutes(1)))
+                        .GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.discarding());
+        assertThat(head.headers().firstValue("Content-Type")).contains("video/mp4");
+    }
 }
