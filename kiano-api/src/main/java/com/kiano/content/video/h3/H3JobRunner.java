@@ -28,6 +28,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -51,6 +53,7 @@ public class H3JobRunner {
     /** Lease owner of H3 API jobs; distinct from any worker id. */
     public static final String LEASE_OWNER = "api-h3";
 
+    private static final Logger log = LoggerFactory.getLogger(H3JobRunner.class);
     private static final int MAX_JOBS_PER_ROUND = 2;
     private static final String SOURCE = "VIDEO";
 
@@ -87,6 +90,20 @@ public class H3JobRunner {
     public void scheduled() {
         if (properties.getApi().isEnabled()) {
             pollOnce();
+        } else {
+            drainWhileDisabled();
+        }
+    }
+
+    /**
+     * With the API switched off nothing would ever run the queued (or parked)
+     * API clips: fail them with H3_API_DISABLED so the coordinator falls back to
+     * real footage instead of leaving those videos stuck.
+     */
+    void drainWhileDisabled() {
+        for (GenerationJob pending : jobs.pendingFor(ExecutorType.H3)) {
+            jobs.failPending(pending.id(), "H3_API_DISABLED: the H3 API was switched off")
+                    .ifPresent(this::notifyFailed);
         }
     }
 
@@ -112,15 +129,24 @@ public class H3JobRunner {
         } catch (H3ClientException ex) {
             fail(job, ex.contentRejected() ? "H3_CONTENT_REJECTED" : "H3_FAILED",
                     ex.getMessage(), ex.retryable());
+        } catch (RuntimeException ex) {
+            // storage, database or anything else: release the job with a retryable
+            // failure instead of leaving it LEASED until the reaper (and a resubmit)
+            log.warn("H3 job {} failed unexpectedly", job.id(), ex);
+            fail(job, "H3_FAILED", ex.getClass().getSimpleName() + ": " + ex.getMessage(), true);
         }
     }
 
     private void submit(GenerationJob job) {
         BigDecimal cost = estimatedCost();
-        BigDecimal spent = jobs.costSince(job.tenantId(), ExecutorType.H3, startOfUtcDay());
+        // finished clips plus the ones already submitted but not finished yet:
+        // the provider bills those too, their cost is only recorded on completion
+        BigDecimal spent = jobs.costSince(job.tenantId(), ExecutorType.H3, startOfUtcDay())
+                .add(cost.multiply(BigDecimal.valueOf(
+                        jobs.inFlightExternal(job.tenantId(), ExecutorType.H3))));
         if (spent.add(cost).compareTo(properties.getApi().getDailyBudgetUsd()) > 0) {
             fail(job, "H3_BUDGET_EXCEEDED", "daily H3 budget of "
-                    + properties.getApi().getDailyBudgetUsd() + " USD would be exceeded (spent today: "
+                    + properties.getApi().getDailyBudgetUsd() + " USD would be exceeded (committed today: "
                     + spent + " USD, this clip needs " + cost + " USD)", false);
             return;
         }
@@ -192,15 +218,26 @@ public class H3JobRunner {
                 "H3_CLIP_FINISHED", "generation_job", String.valueOf(job.id()), null, after,
                 null, SOURCE));
         GenerationJob succeeded = completed.get();
-        terminalHandler.orderedStream().forEach(handler -> handler.onH3Succeeded(succeeded));
+        // the job is already SUCCEEDED: a failing downstream handler is logged and
+        // must not abort the round (the other leased job still gets advanced)
+        terminalHandler.orderedStream().forEach(handler -> {
+            try {
+                handler.onH3Succeeded(succeeded);
+            } catch (RuntimeException ex) {
+                log.error("Handling the finished H3 clip of job {} failed", succeeded.id(), ex);
+            }
+        });
     }
 
     private void fail(GenerationJob job, String code, @Nullable String detail, boolean retryable) {
         String error = code + (detail == null || detail.isBlank() ? "" : ": " + detail);
         jobs.fail(job.id(), LEASE_OWNER, error, retryable, false)
                 .filter(failed -> failed.status() == JobStatus.FAILED)
-                .ifPresent(failed -> failureListener.orderedStream()
-                        .forEach(listener -> listener.onFailed(failed)));
+                .ifPresent(this::notifyFailed);
+    }
+
+    private void notifyFailed(GenerationJob failed) {
+        failureListener.orderedStream().forEach(listener -> listener.onFailed(failed));
     }
 
     private String prompt(GenerationJob job) {

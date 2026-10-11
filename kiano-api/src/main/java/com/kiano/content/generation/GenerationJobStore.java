@@ -208,6 +208,39 @@ public class GenerationJobStore {
     }
 
     /**
+     * Jobs of the executor that were submitted to an external provider
+     * ({@code external_ref} set) and have not finished: their cost is committed
+     * but only recorded on completion, so budget checks must add it.
+     */
+    public int inFlightExternal(long tenantId, ExecutorType executor) {
+        Integer count = jdbcTemplate.queryForObject(
+                "select count(*) from generation_job where tenant_id = ? and executor = ? "
+                        + "and external_ref is not null "
+                        + "and status in ('QUEUED','LEASED','WAITING_EXECUTOR')",
+                Integer.class, tenantId, executor.name());
+        return count == null ? 0 : count;
+    }
+
+    /** Unfinished, not currently leased jobs of an executor (all tenants), oldest first. */
+    public List<GenerationJob> pendingFor(ExecutorType executor) {
+        return jdbcTemplate.query(
+                "select * from generation_job where executor = ? "
+                        + "and status in ('QUEUED','WAITING_EXECUTOR') order by id",
+                mapper, executor.name());
+    }
+
+    /**
+     * Fails a job nobody holds (QUEUED or WAITING_EXECUTOR) - e.g. when its
+     * executor is switched off; empty when it was leased or finished meanwhile.
+     */
+    public Optional<GenerationJob> failPending(long jobId, String error) {
+        return jdbcTemplate.query(
+                "update generation_job set status='FAILED', error=?, finished_at=now() "
+                        + "where id=? and status in ('QUEUED','WAITING_EXECUTOR') returning *",
+                mapper, truncate(error), jobId).stream().findFirst();
+    }
+
+    /**
      * Fails a leased job. Executor-unavailable moves it to WAITING_EXECUTOR and
      * refunds the attempt; retryable failures back off (30s * 2^(attempts-1));
      * everything else (and exhausted retries) is FAILED.

@@ -113,6 +113,18 @@ class H3BackendSelectorTest {
     }
 
     @Test
+    void next_inFlightApiClipsCountAgainstTheBudget() {
+        // one API clip was submitted (external_ref set) but has not finished or cost anything yet
+        long inFlight = jobs.create(tenantId, productId, runId, JobStep.H3_CLIP_API, "demo",
+                Map.of("outputs", Map.of("clip", "t1/gen/clip.mp4")), List.of());
+        jdbcTemplate.update("update generation_job set external_ref = 'h3-task-7' where id = ?",
+                inFlight);
+
+        // 10 USD committed + 10 USD for the next clip > 10 USD budget
+        assertThat(selector.next(tenantId, H3Backend.LOCAL)).isEmpty();
+    }
+
+    @Test
     void localOnly_apiOnly_off_modes() {
         properties.setBackend(H3Properties.Mode.LOCAL_ONLY);
         assertThat(selector.initial(tenantId)).isEmpty();

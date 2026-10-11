@@ -64,10 +64,13 @@ public class H3BackendSelector {
         if (!properties.getApi().isEnabled()) {
             return false;
         }
-        BigDecimal spent = jobs.costSince(tenantId, ExecutorType.H3, startOfUtcDay());
         BigDecimal next = properties.getApi().getPricePerSecondUsd()
                 .multiply(BigDecimal.valueOf(properties.getRequestSeconds()));
-        return spent.add(next).compareTo(properties.getApi().getDailyBudgetUsd()) <= 0;
+        // clips already submitted but not finished are billed too (cost lands on completion)
+        BigDecimal committed = jobs.costSince(tenantId, ExecutorType.H3, startOfUtcDay())
+                .add(next.multiply(BigDecimal.valueOf(jobs.inFlightExternal(tenantId,
+                        ExecutorType.H3))));
+        return committed.add(next).compareTo(properties.getApi().getDailyBudgetUsd()) <= 0;
     }
 
     private static Instant startOfUtcDay() {

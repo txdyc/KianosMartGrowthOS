@@ -240,6 +240,76 @@ class H3JobRunnerTest {
         assertThat(coordinator.failed).containsExactly(jobId);
     }
 
+    @Test
+    void budget_countsClipsSubmittedButNotYetFinished() {
+        properties.getApi().setDailyBudgetUsd(new BigDecimal("20")); // room for two 10 USD clips
+        long first = createApiJob(apiInput());
+        long second = createApiJob(apiInput());
+        long third = createApiJob(apiInput());
+
+        runner.pollOnce(); // submits and parks the first two; nothing has completed yet
+        runner.pollOnce(); // the third must see 20 USD already committed
+
+        assertThat(client.submitted).hasSize(2);
+        assertThat(jobs.find(tenantId, first).orElseThrow().externalRef()).isNotNull();
+        assertThat(jobs.find(tenantId, second).orElseThrow().externalRef()).isNotNull();
+        GenerationJob job = jobs.find(tenantId, third).orElseThrow();
+        assertThat(job.status()).isEqualTo(JobStatus.FAILED);
+        assertThat(job.error()).startsWith("H3_BUDGET_EXCEEDED");
+    }
+
+    @Test
+    void apiDisabled_queuedAndParkedClipsFailOverInsteadOfStranding() {
+        long queued = createApiJob(apiInput());
+        long parked = createApiJob(apiInput());
+        jdbcTemplate.update("update generation_job set external_ref = 'h3-task-9' where id = ?",
+                parked);
+        properties.getApi().setEnabled(false);
+
+        runner.scheduled();
+
+        for (long id : List.of(queued, parked)) {
+            GenerationJob job = jobs.find(tenantId, id).orElseThrow();
+            assertThat(job.status()).isEqualTo(JobStatus.FAILED);
+            assertThat(job.error()).startsWith("H3_API_DISABLED");
+        }
+        assertThat(coordinator.failed).containsExactlyInAnyOrder(queued, parked);
+        assertThat(client.submitted).isEmpty();
+        assertThat(client.polled).isEmpty();
+    }
+
+    @Test
+    void unexpectedErrorDuringSubmit_failsRetryably_insteadOfLeavingTheJobLeased() {
+        Map<String, Object> input = new java.util.HashMap<>(apiInput());
+        input.put("firstFrameKey", "t1/does/not/exist.jpg"); // storage throws, not H3ClientException
+        long jobId = createApiJob(input);
+
+        org.assertj.core.api.Assertions.assertThatCode(runner::pollOnce).doesNotThrowAnyException();
+
+        GenerationJob job = jobs.find(tenantId, jobId).orElseThrow();
+        assertThat(job.status()).isEqualTo(JobStatus.QUEUED); // backed off for a retry
+        assertThat(job.leaseOwner()).isNull();
+        assertThat(job.error()).startsWith("H3_FAILED");
+        assertThat(client.submitted).isEmpty();
+    }
+
+    @Test
+    void handlerErrorAfterCompletion_doesNotStopTheRound() {
+        long first = createApiJob(apiInput());
+        long second = createApiJob(apiInput());
+        jdbcTemplate.update("update generation_job set external_ref = 'h3-task-1' "
+                + "where id in (?, ?)", first, second);
+        client.pollResult = id -> new H3TaskStatus.Succeeded("h3-file-1");
+        client.downloadContent = MP4;
+        coordinator.throwsOnSucceeded = 1;
+
+        org.assertj.core.api.Assertions.assertThatCode(runner::pollOnce).doesNotThrowAnyException();
+
+        assertThat(jobs.find(tenantId, first).orElseThrow().status()).isEqualTo(JobStatus.SUCCEEDED);
+        assertThat(jobs.find(tenantId, second).orElseThrow().status()).isEqualTo(JobStatus.SUCCEEDED);
+        assertThat(coordinator.succeeded).contains(second);
+    }
+
     private long createApiJob(Map<String, Object> input) {
         return jobs.create(tenantId, productId, runId, JobStep.H3_CLIP_API, "demo", input, List.of());
     }
@@ -276,7 +346,8 @@ class H3JobRunnerTest {
     @SuppressWarnings("unchecked")
     private static <T> ObjectProvider<T> providerOf(T bean) {
         ObjectProvider<T> provider = mock(ObjectProvider.class);
-        when(provider.orderedStream()).thenReturn(Stream.of(bean));
+        // a fresh stream per call: a round can fan out more than once
+        when(provider.orderedStream()).thenAnswer(invocation -> Stream.of(bean));
         return provider;
     }
 
@@ -330,14 +401,22 @@ class H3JobRunnerTest {
         private final List<Long> failed = new ArrayList<>();
         private final List<String> escalated = new ArrayList<>();
 
+        /** How many onH3Succeeded calls still throw (a failing downstream handler). */
+        private int throwsOnSucceeded;
+
         private void reset() {
             succeeded.clear();
             failed.clear();
             escalated.clear();
+            throwsOnSucceeded = 0;
         }
 
         @Override
         public void onH3Succeeded(GenerationJob job) {
+            if (throwsOnSucceeded > 0) {
+                throwsOnSucceeded--;
+                throw new IllegalStateException("compose planning failed");
+            }
             succeeded.add(job.id());
         }
 
