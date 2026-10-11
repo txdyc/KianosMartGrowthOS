@@ -51,6 +51,12 @@ class FactSheetServiceTest {
 
     @BeforeEach
     void seed() {
+        // product_fact_sheet and the C6 batch rows point at products/runs:
+        // delete the dependents first so an earlier class cannot block this seed
+        jdbcTemplate.update("delete from content_batch_item");
+        jdbcTemplate.update("delete from generation_job");
+        jdbcTemplate.update("delete from generation_run");
+        jdbcTemplate.update("delete from content_batch");
         jdbcTemplate.update("delete from product_fact_sheet");
         jdbcTemplate.update("delete from audit_log");
         jdbcTemplate.update("delete from llm_call");

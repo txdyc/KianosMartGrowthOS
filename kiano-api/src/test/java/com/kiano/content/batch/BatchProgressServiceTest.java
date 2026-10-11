@@ -152,16 +152,16 @@ class BatchProgressServiceTest {
         long inBatch = readyProduct("MG-STD1");
         long outside = product("MG-STD2");
         // a call of the batch SKU from before the batch: not counted
-        long oldCall = llmCall(0.7);
+        long oldCall = llmCall(0.7, "now() - interval '1 hour'");
         factSheet(inBatch, 1, "LOCKED", oldCall);
         // another product's call: not counted either
-        factSheet(outside, 1, "DRAFT", llmCall(1.1));
+        factSheet(outside, 1, "DRAFT", llmCall(1.1, "now()"));
 
         long batchId = batches.create(user, "Spring", List.of(inBatch), false).id();
 
-        long batchCall = llmCall(0.5);
+        long batchCall = llmCall(0.5, "now() + interval '1 minute'");
         factSheet(inBatch, 2, "DRAFT", batchCall);
-        long copyCall = llmCall(0.2);
+        long copyCall = llmCall(0.2, "now() + interval '1 minute'");
         assetWithProvenance(inBatch, copyCall);
         long runId = runs.create(tenantId, inBatch, null);
         long jobId = jobs.create(tenantId, inBatch, runId, JobStep.CUTOUT, "P1", Map.of(),
@@ -242,10 +242,15 @@ class BatchProgressServiceTest {
                 tenantId, productId, "{\"llmCallId\":" + llmCallId + "}");
     }
 
-    private long llmCall(double costUsd) {
+    /**
+     * The created_at is explicit: the batch's created_at is set by the JVM and
+     * the call's by the database, so offsets keep the fixture independent of
+     * the small clock skew between them.
+     */
+    private long llmCall(double costUsd, String createdAt) {
         return jdbcTemplate.queryForObject(
-                "insert into llm_call (tenant_id, purpose, model, cost_usd, status) "
-                        + "values (?, 'FACT_DRAFT', 'claude', ?, 'OK') returning id",
+                "insert into llm_call (tenant_id, purpose, model, cost_usd, status, created_at) "
+                        + "values (?, 'FACT_DRAFT', 'claude', ?, 'OK', " + createdAt + ") returning id",
                 Long.class, tenantId, costUsd);
     }
 

@@ -50,6 +50,9 @@ class ReviewSessionServiceTest {
     void seed() {
         jdbcTemplate.update("delete from review_session");
         jdbcTemplate.update("delete from content_batch_item");
+        // batch jobs and runs point at a batch/product: delete them first
+        jdbcTemplate.update("delete from generation_job");
+        jdbcTemplate.update("delete from generation_run");
         jdbcTemplate.update("delete from content_batch");
         jdbcTemplate.update("delete from product");
         jdbcTemplate.update("delete from store where platform = 'WOOCOMMERCE'");
